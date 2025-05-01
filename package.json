@@ -1,0 +1,37 @@
+{
+    "name": "weixing-service",
+    "version": "1.0.0",
+    "description": "Express Node.js 后端服务，管理参数数据、远程重启设备和串口通信",
+    "main": "dist/index.js",
+    "scripts": {
+        "build": "tsc",
+        "start": "node dist/index.js",
+        "dev": "ts-node-dev --respawn src/index.ts",
+        "test": "jest"
+    },
+    "dependencies": {
+        "express": "^4.18.2",
+        "node-ssh": "^13.1.0",
+        "serialport": "^12.0.0",
+        "dotenv": "^16.3.1",
+        "cors": "^2.8.5",
+        "morgan": "^1.10.0",
+        "winston": "^3.11.0",
+        "nedb": "^1.8.0",
+        "@types/nedb": "^1.8.13",
+        "zod": "^3.22.4"
+    },
+    "devDependencies": {
+        "@types/express": "^4.17.21",
+        "@types/node": "^20.10.5",
+        "@types/cors": "^2.8.17",
+        "@types/morgan": "^1.9.9",
+        "ts-node-dev": "^2.0.0",
+        "typescript": "^5.3.3",
+        "jest": "^29.7.0",
+        "@types/jest": "^29.5.11",
+        "ts-jest": "^29.1.1"
+    },
+    "author": "",
+    "license": "ISC"
+}
