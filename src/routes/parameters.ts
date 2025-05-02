@@ -5,12 +5,21 @@ import {
   getParameter,
   getAllParameters,
   deleteParameter,
+  getNestedParameter,
+  updateNestedParameter,
 } from "../services/db";
 import { logger } from "../utils/logger";
 
 // 参数验证模式
 const parameterSchema = z.object({
   key: z.string().min(1).max(100),
+  value: z.any(),
+});
+
+// 嵌套参数验证模式
+const nestedParameterSchema = z.object({
+  key: z.string().min(1).max(100),
+  path: z.string().min(1),
   value: z.any(),
 });
 
@@ -52,6 +61,25 @@ export function setupParametersRoutes(): express.Router {
     }
   });
 
+  // 获取嵌套参数
+  router.get("/:key/:path(*)", async (req, res) => {
+    try {
+      const { key, path } = req.params;
+      const value = await getNestedParameter(key, path);
+
+      if (value === undefined || value === null) {
+        return res.status(404).json({ error: `参数 ${key}.${path} 不存在` });
+      }
+
+      res.json({ key, path, value });
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      logger.error(`获取嵌套参数失败: ${errorMessage}`);
+      res.status(500).json({ error: errorMessage });
+    }
+  });
+
   // 创建或更新参数
   router.post("/", async (req, res) => {
     try {
@@ -72,6 +100,30 @@ export function setupParametersRoutes(): express.Router {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
       logger.error(`保存参数失败: ${errorMessage}`);
+      res.status(500).json({ error: errorMessage });
+    }
+  });
+
+  // 更新嵌套参数
+  router.post("/nested", async (req, res) => {
+    try {
+      const validation = nestedParameterSchema.safeParse(req.body);
+
+      if (!validation.success) {
+        return res.status(400).json({
+          error: "参数验证失败",
+          details: validation.error.format(),
+        });
+      }
+
+      const { key, path, value } = req.body;
+      const result = await updateNestedParameter(key, path, value);
+
+      res.status(200).json(result);
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      logger.error(`更新嵌套参数失败: ${errorMessage}`);
       res.status(500).json({ error: errorMessage });
     }
   });
