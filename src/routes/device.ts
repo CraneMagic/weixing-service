@@ -6,6 +6,12 @@ import { logger } from "../utils/logger";
 // 命令验证模式
 const commandSchema = z.object({
   command: z.string().min(1),
+  ip: z.string().optional(), // 可选的设备 IP 地址
+});
+
+// 设备 IP 验证模式
+const deviceSchema = z.object({
+  ip: z.string().optional(), // 可选的设备 IP 地址
 });
 
 /**
@@ -17,7 +23,18 @@ export function setupDeviceRoutes(): express.Router {
   // 重启设备
   router.post("/reboot", async (req, res) => {
     try {
-      const result = await rebootDevice();
+      const validation = deviceSchema.safeParse(req.body);
+
+      if (!validation.success) {
+        return res.status(400).json({
+          success: false,
+          error: "设备参数验证失败",
+          details: validation.error.format(),
+        });
+      }
+
+      const { ip } = req.body;
+      const result = await rebootDevice(ip);
 
       if (!result.success) {
         return res.status(500).json({
@@ -51,8 +68,8 @@ export function setupDeviceRoutes(): express.Router {
         });
       }
 
-      const { command } = req.body;
-      const result = await executeCommand(command);
+      const { command, ip } = req.body;
+      const result = await executeCommand(command, ip);
 
       if (!result.success) {
         return res.status(500).json({
@@ -79,10 +96,22 @@ export function setupDeviceRoutes(): express.Router {
   // 断开SSH连接
   router.post("/disconnect", (req, res) => {
     try {
-      disconnectSSH();
+      const validation = deviceSchema.safeParse(req.body);
+
+      if (!validation.success) {
+        return res.status(400).json({
+          success: false,
+          error: "设备参数验证失败",
+          details: validation.error.format(),
+        });
+      }
+
+      const { ip } = req.body;
+      disconnectSSH(ip);
+
       res.json({
         success: true,
-        message: "SSH连接已断开",
+        message: ip ? `与设备 ${ip} 的SSH连接已断开` : "所有SSH连接已断开",
       });
     } catch (error) {
       const errorMessage =
