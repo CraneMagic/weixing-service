@@ -5,6 +5,7 @@ import dotenv from "dotenv";
 import { setupParametersRoutes } from "./routes/parameters";
 import { setupDeviceRoutes } from "./routes/device";
 import { setupSerialRoutes } from "./routes/serial";
+import lightRoutes from "./routes/lightRoutes";
 import { logger } from "./utils/logger";
 import { initializeDatabase } from "./services/db";
 
@@ -26,6 +27,7 @@ app.use(morgan("dev"));
 app.use("/api/parameters", setupParametersRoutes());
 app.use("/api/device", setupDeviceRoutes());
 app.use("/api/serial", setupSerialRoutes());
+app.use("/api/light", lightRoutes);
 
 // 错误处理
 app.use(

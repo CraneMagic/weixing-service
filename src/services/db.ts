@@ -161,30 +161,7 @@ const defaultParameters = [
     key: "cameraConfig",
     value: {
       default: {
-        exposure: 1000,
-        gain: 1024,
-        awb_mode: 0,
-        luma: 50,
-        contrast: 50,
-        saturation: 50,
-      },
-      camera1: {
-        exposure: 1000,
-        gain: 1024,
-        awb_mode: 0,
-        luma: 50,
-        contrast: 50,
-        saturation: 50,
-      },
-      camera2: {
-        exposure: 1000,
-        gain: 1024,
-        awb_mode: 0,
-        luma: 50,
-        contrast: 50,
-        saturation: 50,
-      },
-      camera3: {
+        id: "default",
         exposure: 1000,
         gain: 1024,
         awb_mode: 0,
@@ -199,6 +176,7 @@ const defaultParameters = [
     value: {
       outerDiameterCorrectionValue: -18400,
       innerDiameterCorrectionValue: 4550,
+      maxValueAdjustmentFactor: 1,
     },
   },
 ];

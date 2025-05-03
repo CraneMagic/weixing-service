@@ -104,6 +104,41 @@ export async function sendData(data: string): Promise<boolean> {
 }
 
 /**
+ * 发送16进制命令到串口
+ * @param hexArray 16进制数组，如 [0xA0, 0x01, 0x01, 0xA2]
+ */
+export async function sendHexCommand(hexArray: number[]): Promise<boolean> {
+  try {
+    if (!serialPort || !serialPort.isOpen) {
+      await initializeSerialPort();
+    }
+
+    return new Promise((resolve, reject) => {
+      if (!serialPort) {
+        reject(new Error("串口未初始化"));
+        return;
+      }
+
+      const buffer = Buffer.from(hexArray);
+      logger.debug(`发送16进制命令: ${buffer.toString("hex")}`);
+
+      serialPort.write(buffer, (error) => {
+        if (error) {
+          logger.error(`发送16进制命令错误: ${error.message}`);
+          reject(error);
+          return;
+        }
+        resolve(true);
+      });
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`发送16进制命令失败: ${errorMessage}`);
+    return false;
+  }
+}
+
+/**
  * 关闭串口
  */
 export function closeSerialPort(): Promise<boolean> {
