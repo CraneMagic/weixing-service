@@ -57,3 +57,28 @@ export async function setAlarmState(req: Request, res: Response) {
     });
   }
 }
+
+/**
+ * 关闭所有指示灯
+ */
+export async function turnOffAllLights(req: Request, res: Response) {
+  try {
+    // 关闭全部: A0 00 00 A0
+    await sendHexCommand([0xa0, 0x00, 0x00, 0xa0]);
+
+    logger.info("已关闭所有指示灯");
+
+    return res.status(200).json({
+      success: true,
+      message: "已关闭所有指示灯",
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`关闭所有指示灯失败: ${errorMessage}`);
+
+    return res.status(500).json({
+      success: false,
+      message: `关闭所有指示灯失败: ${errorMessage}`,
+    });
+  }
+}
