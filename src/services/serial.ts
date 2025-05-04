@@ -19,7 +19,7 @@ export async function initializeSerialPort(): Promise<boolean> {
       return true;
     }
 
-    const portPath = process.env.SERIAL_PORT || "/dev/ttyUSB0";
+    const portPath = process.env.SERIAL_PORT || "COM4";
     const baudRate = parseInt(process.env.SERIAL_BAUD_RATE || "9600", 10);
 
     logger.info(`正在打开串口: ${portPath} @ ${baudRate}bps`);

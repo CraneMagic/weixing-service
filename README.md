@@ -49,7 +49,7 @@ SSH_PRIVATE_KEY_PATH=/path/to/private/key
 REBOOT_COMMAND=reboot
 
 # 串口配置
-SERIAL_PORT=/dev/ttyUSB0
+SERIAL_PORT=COM4
 SERIAL_BAUD_RATE=9600
 ```
 
