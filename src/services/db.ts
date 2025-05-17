@@ -21,7 +21,7 @@ const defaultParameters = [
         wallThicknessMax: 2.3,
         wallThicknessMin: 2,
         wallThicknessTolerance: 0.2,
-        shrinkage: 0.99,
+        shrinkage: 0.2,
       },
       dn20xen23: {
         materialSpec: "dn20xen2.3",
@@ -33,7 +33,7 @@ const defaultParameters = [
         wallThicknessMax: 2.7,
         wallThicknessMin: 2.3,
         wallThicknessTolerance: 0.2,
-        shrinkage: 0.99,
+        shrinkage: 0.2,
       },
       dn20xen28: {
         materialSpec: "dn20xen2.8",
@@ -45,7 +45,7 @@ const defaultParameters = [
         wallThicknessMax: 3.2,
         wallThicknessMin: 2.8,
         wallThicknessTolerance: 0.2,
-        shrinkage: 0.99,
+        shrinkage: 0.2,
       },
       dn20xen34: {
         materialSpec: "dn20xen3.4",
@@ -57,7 +57,7 @@ const defaultParameters = [
         wallThicknessMax: 3.9,
         wallThicknessMin: 3.4,
         wallThicknessTolerance: 0.2,
-        shrinkage: 0.99,
+        shrinkage: 0.2,
       },
       dn25xen23: {
         materialSpec: "dn25xen2.3",
@@ -69,7 +69,7 @@ const defaultParameters = [
         wallThicknessMax: 2.7,
         wallThicknessMin: 2.3,
         wallThicknessTolerance: 0.2,
-        shrinkage: 0.99,
+        shrinkage: 0.2,
       },
       dn25xen28: {
         materialSpec: "dn25xen2.8",
@@ -81,7 +81,7 @@ const defaultParameters = [
         wallThicknessMax: 3.2,
         wallThicknessMin: 2.8,
         wallThicknessTolerance: 0.2,
-        shrinkage: 0.99,
+        shrinkage: 0.2,
       },
       dn25xen35: {
         materialSpec: "dn25xen3.5",
@@ -93,7 +93,7 @@ const defaultParameters = [
         wallThicknessMax: 4,
         wallThicknessMin: 3.5,
         wallThicknessTolerance: 0.2,
-        shrinkage: 0.99,
+        shrinkage: 0.2,
       },
       dn25xen42: {
         materialSpec: "dn25xen4.2",
@@ -105,7 +105,7 @@ const defaultParameters = [
         wallThicknessMax: 4.8,
         wallThicknessMin: 4.2,
         wallThicknessTolerance: 0.2,
-        shrinkage: 0.99,
+        shrinkage: 0.2,
       },
       dn32xen29: {
         materialSpec: "dn32xen2.9",
@@ -117,7 +117,7 @@ const defaultParameters = [
         wallThicknessMax: 3.3,
         wallThicknessMin: 2.9,
         wallThicknessTolerance: 0.2,
-        shrinkage: 0.99,
+        shrinkage: 0.2,
       },
       dn32xen36: {
         materialSpec: "dn32xen3.6",
@@ -129,7 +129,7 @@ const defaultParameters = [
         wallThicknessMax: 4.1,
         wallThicknessMin: 3.6,
         wallThicknessTolerance: 0.2,
-        shrinkage: 0.99,
+        shrinkage: 0.2,
       },
       dn32xen44: {
         materialSpec: "dn32xen4.4",
@@ -141,7 +141,7 @@ const defaultParameters = [
         wallThicknessMax: 5,
         wallThicknessMin: 4.4,
         wallThicknessTolerance: 0.2,
-        shrinkage: 0.99,
+        shrinkage: 0.2,
       },
       dn32xen54: {
         materialSpec: "dn32xen5.4",
@@ -153,7 +153,7 @@ const defaultParameters = [
         wallThicknessMax: 6.1,
         wallThicknessMin: 5.4,
         wallThicknessTolerance: 0.2,
-        shrinkage: 0.99,
+        shrinkage: 0.2,
       },
     },
   },
