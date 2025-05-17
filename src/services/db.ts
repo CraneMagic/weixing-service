@@ -162,11 +162,11 @@ const defaultParameters = [
     value: {
       default: {
         id: "default",
-        exposure: 1000,
-        gain: 1024,
+        exposure: 512,
+        gain: 2048,
         awb_mode: 0,
-        luma: 50,
-        contrast: 50,
+        luma: 60,
+        contrast: 75,
         saturation: 50,
       },
     },
@@ -174,8 +174,8 @@ const defaultParameters = [
   {
     key: "correctionValue",
     value: {
-      outerDiameterCorrectionValue: -18400,
-      innerDiameterCorrectionValue: 4550,
+      outerDiameterCorrectionValue: -18075,
+      innerDiameterCorrectionValue: 4650,
       maxValueAdjustmentFactor: 1,
     },
   },
