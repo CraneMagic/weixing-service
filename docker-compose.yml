@@ -1,0 +1,35 @@
+version: "3.8"
+
+services:
+  weixing-service:
+    image: yijun9124/weixing-service:latest
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    # environment:
+    #   - NODE_ENV=production
+    #   - PORT=3000
+    #   - DB_PATH=/app/data
+    #   - SERIAL_PORT=COM4
+    #   # 可以添加其他环境变量，如数据保留天数等
+    #   - DATA_RETENTION_DAYS=90
+    #   - CLEANUP_INTERVAL_DAYS=7
+    env_file:
+      - .env
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--no-verbose",
+          "--tries=1",
+          "--spider",
+          "http://localhost:3000/api/parameters",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
