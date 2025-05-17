@@ -239,7 +239,7 @@ export async function getRecentMeasurements(
       timestamp: row.timestamp,
       specId: row.spec_id,
       specName: row.spec_name,
-      measurements: {
+      stats: {
         outer: {
           max: row.outer_max,
           avg: row.outer_avg,
@@ -285,7 +285,7 @@ export async function getMeasurementById(id: number): Promise<any> {
       timestamp: row.timestamp,
       specId: row.spec_id,
       specName: row.spec_name,
-      measurements: {
+      stats: {
         outer: {
           max: row.outer_max,
           avg: row.outer_avg,
