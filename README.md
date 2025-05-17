@@ -110,3 +110,140 @@ curl -X POST http://localhost:3000/api/serial/send \
   -H "Content-Type: application/json" \
   -d '{"data": "AT+CMD\r\n"}'
 ```
+
+# 管道测量数据存储
+
+本项目使用 SQLite 数据库实现了管道测量数据的长期存储方案。该方案专为处理管道测量数据而设计，支持与现有 nedb 规格管理系统的无缝集成。
+
+## 数据存储方案
+
+### 数据库设计
+
+使用 SQLite 作为底层存储引擎，主要特点：
+
+- 嵌入式数据库，无需额外的数据库服务
+- 使用单一文件存储，便于备份和迁移
+- 支持标准 SQL 查询，高效处理大量数据
+- 适合长期运行和数据持续积累的应用场景
+
+### 表结构
+
+测量数据表(measurements)包含以下字段：
+
+- `id`: 自增主键
+- `timestamp`: 测量时间戳
+- `spec_id`: 关联的规格 ID (来自 nedb)
+- `spec_name`: 规格名称
+- `outer_max/avg/min`: 外径最大/平均/最小值
+- `inner_max/avg/min`: 内径最大/平均/最小值
+- `wall_max/avg/min`: 壁厚最大/平均/最小值
+- `outer_non_circularity`: 外径不圆度
+- `inner_non_circularity`: 内径不圆度
+- `is_compliant`: 是否符合规格 (1=是, 0=否, NULL=未检查)
+- `corrected_data`: 修正后的数据的 JSON 存储（包含修正后的外径和内径数据）
+- `caculated_data`: 计算后的详细数据的 JSON 存储（包含外径、内径、壁厚以及中心点数据）
+
+### 索引优化
+
+为提高查询性能，添加了以下索引：
+
+- 时间索引：快速检索特定时间范围内的数据
+- 规格 ID 索引：按规格分组查询时提高性能
+- 合规性索引：快速过滤符合/不符合规格的数据
+
+## API 接口
+
+### 数据存储接口
+
+```
+# 创建测量数据
+POST /api/measurements
+Content-Type: application/json
+
+{
+  "correctedData": {
+    "outerAdjusted": number[],
+    "innerAdjusted": number[]
+  },
+  "caculatedData": {
+    "outer_diameters": number[][],
+    "inner_diameters": number[][],
+    "wall_thicknesses": number[][],
+    "center": number[]
+  },
+  "resultData": {
+    "outerStats": { "max": number, "avg": number, "min": number },
+    "innerStats": { "max": number, "avg": number, "min": number },
+    "wallStats": { "max": number, "avg": number, "min": number },
+    "outerNonCircularity": number,
+    "innerNonCircularity": number
+  },
+  "specKey": "可选的规格ID"
+}
+```
+
+> **注意**: 系统支持最大 50MB 的请求体大小，适用于包含大量测量数据的请求。
+
+### 数据查询接口
+
+```
+# 获取最近的测量数据
+GET /api/measurements?hours=24&limit=1000&specId=可选的规格ID
+
+# 获取单条测量数据
+GET /api/measurements/:id
+```
+
+### 数据分析接口
+
+```
+# 获取合规性统计
+GET /api/measurements/stats/compliance?startTime=ISO日期&endTime=ISO日期&specId=可选的规格ID
+
+# 获取按规格分组的统计
+GET /api/measurements/stats/specs?startTime=ISO日期&endTime=ISO日期
+
+# 获取趋势数据
+GET /api/measurements/stats/trend?startTime=ISO日期&endTime=ISO日期&interval=hour|day&specId=可选的规格ID
+```
+
+### 数据维护接口
+
+```
+# 清理过期数据
+POST /api/measurements/maintenance/cleanup?days=90
+
+# 优化数据库
+POST /api/measurements/maintenance/optimize
+```
+
+## 数据维护策略
+
+### 自动清理
+
+系统配置了定时清理任务：
+
+- 默认保留最近 90 天的数据（可通过环境变量 `DATA_RETENTION_DAYS` 配置）
+- 定时清理间隔为 7 天（可通过环境变量 `CLEANUP_INTERVAL_DAYS` 配置）
+- 清理后会自动优化数据库，释放磁盘空间
+
+### 手动维护
+
+可通过 API 接口手动触发数据清理和优化操作：
+
+- 使用 `/api/measurements/maintenance/cleanup` 接口清理过期数据
+- 使用 `/api/measurements/maintenance/optimize` 接口优化数据库
+
+## 与规格系统集成
+
+测量数据可以关联到 nedb 中存储的规格数据：
+
+- 保存测量数据时可指定规格 ID
+- 系统会自动判断数据是否符合规格要求
+- 支持按规格分组查询和统计
+
+## 环境变量配置
+
+- `DB_PATH`: 数据目录路径，默认为 "./data"
+- `DATA_RETENTION_DAYS`: 数据保留天数，默认为 90 天
+- `CLEANUP_INTERVAL_DAYS`: 清理间隔天数，默认为 7 天
