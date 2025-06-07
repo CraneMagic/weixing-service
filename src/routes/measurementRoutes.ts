@@ -8,6 +8,7 @@ import {
   getTrend,
   cleanup,
   optimize,
+  sendUdpData,
 } from "../controllers/measurementController";
 
 const router = Router();
@@ -27,5 +28,10 @@ router.get("/", getRecentData);
 
 // 获取单条测量数据（放在最后，避免匹配到其他路由）
 router.get("/:id", getMeasurement);
+
+// 向测量单片机UDP发送数据
+router.post("/udp/off", sendUdpData); // 关闭所有指示灯
+router.post("/udp/normal", sendUdpData); // 正常状态
+router.post("/udp/alarm", sendUdpData); // 报警状态
 
 export default router;

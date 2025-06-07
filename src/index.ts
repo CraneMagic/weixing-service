@@ -7,6 +7,7 @@ import { setupDeviceRoutes } from "./routes/device";
 import { setupSerialRoutes } from "./routes/serial";
 import lightRoutes from "./routes/lightRoutes";
 import measurementRoutes from "./routes/measurementRoutes";
+import qualityRecordRoutes from "./routes/qualityRecordRoutes";
 import { logger } from "./utils/logger";
 import { initializeDatabase } from "./services/db";
 import { initializeSQLiteDB } from "./services/db-sqlite";
@@ -55,6 +56,7 @@ app.use("/api/device", setupDeviceRoutes());
 app.use("/api/serial", setupSerialRoutes());
 app.use("/api/light", lightRoutes);
 app.use("/api/measurements", measurementRoutes);
+app.use("/api/quality-records", qualityRecordRoutes);
 
 // 错误处理
 app.use(

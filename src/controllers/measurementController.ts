@@ -274,3 +274,17 @@ export async function optimize(req: Request, res: Response) {
     });
   }
 }
+
+export async function sendUdpData(req: Request, res: Response) {
+  try {
+    const state = req.url.split("/")[2];
+    const data = req.body;
+
+    if (state === "off") {
+      // 发送udp数据
+    }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`发送UDP数据失败: ${errorMessage}`);
+  }
+}

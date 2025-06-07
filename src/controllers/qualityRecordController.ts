@@ -1,0 +1,165 @@
+import { Request, Response } from "express";
+import { logger } from "../utils/logger";
+import {
+  saveQualityRecord,
+  getQualityRecords as getRecords,
+  getQualityRecord as getRecord,
+  updateQualityRecord as updateRecord,
+  deleteQualityRecord as deleteRecord,
+} from "../services/db-sqlite";
+
+/**
+ * 创建管材质量检测记录
+ */
+export async function createQualityRecord(req: Request, res: Response) {
+  try {
+    const data = req.body;
+    if (!data || !data.client_ip || !data.timestamp) {
+      return res.status(400).json({
+        success: false,
+        message: "缺少 client_ip 或 timestamp",
+      });
+    }
+
+    const result = await saveQualityRecord(data);
+
+    return res.status(201).json({
+      success: true,
+      message: "质量检测记录已保存",
+      data: result,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`保存质量检测记录失败: ${errorMessage}`);
+    return res.status(500).json({
+      success: false,
+      message: `保存失败: ${errorMessage}`,
+    });
+  }
+}
+
+/**
+ * 获取管材质量检测记录列表
+ */
+export async function getQualityRecords(req: Request, res: Response) {
+  try {
+    //
+    const options = req.query; // Add pagination, filtering, sorting later
+    const data = await getRecords(options);
+    return res.status(200).json({
+      success: true,
+      data,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`获取质量检测记录列表失败: ${errorMessage}`);
+    return res.status(500).json({
+      success: false,
+      message: `获取失败: ${errorMessage}`,
+    });
+  }
+}
+
+/**
+ * 获取单条管材质量检测记录
+ */
+export async function getQualityRecord(req: Request, res: Response) {
+  try {
+    const { client_ip, timestamp } = req.params;
+    if (!client_ip || !timestamp) {
+      return res.status(400).json({
+        success: false,
+        message: "缺少 client_ip 或 timestamp",
+      });
+    }
+
+    const data = await getRecord(client_ip, timestamp);
+
+    if (!data) {
+      return res.status(404).json({
+        success: false,
+        message: "未找到质量检测记录",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`获取质量检测记录详情失败: ${errorMessage}`);
+    return res.status(500).json({
+      success: false,
+      message: `获取失败: ${errorMessage}`,
+    });
+  }
+}
+
+/**
+ * 更新管材质量检测记录
+ */
+export async function updateQualityRecord(req: Request, res: Response) {
+  try {
+    const { client_ip, timestamp } = req.params;
+    const data = req.body;
+
+    if (!client_ip || !timestamp) {
+      return res.status(400).json({
+        success: false,
+        message: "缺少 client_ip 或 timestamp",
+      });
+    }
+
+    const result = await updateRecord(client_ip, timestamp, data);
+
+    if (result.updated === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "未找到要更新的质量检测记录",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "质量检测记录已更新",
+      data: result,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`更新质量检测记录失败: ${errorMessage}`);
+    return res.status(500).json({
+      success: false,
+      message: `更新失败: ${errorMessage}`,
+    });
+  }
+}
+
+/**
+ * 删除管材质量检测记录
+ */
+export async function deleteQualityRecord(req: Request, res: Response) {
+  try {
+    const { client_ip, timestamp } = req.params;
+    if (!client_ip || !timestamp) {
+      return res.status(400).json({
+        success: false,
+        message: "缺少 client_ip 或 timestamp",
+      });
+    }
+
+    await deleteRecord(client_ip, timestamp);
+
+    return res.status(200).json({
+      success: true,
+      message: "质量检测记录已删除",
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`删除质量检测记录失败: ${errorMessage}`);
+    return res.status(500).json({
+      success: false,
+      message: `删除失败: ${errorMessage}`,
+    });
+  }
+}

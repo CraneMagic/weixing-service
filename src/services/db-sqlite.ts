@@ -69,6 +69,45 @@ export async function initializeSQLiteDB(): Promise<void> {
       ON measurements(is_compliant)
     `);
 
+    // 创建管材质量检测记录表
+    await db.exec(`
+      CREATE TABLE IF NOT EXISTS quality_records (
+        client_ip TEXT NOT NULL,
+        timestamp TEXT NOT NULL,
+        label TEXT,
+        confidence REAL,
+        frame_id INTEGER,
+        fis INTEGER,
+        fps INTEGER,
+        filename TEXT,
+        resolution TEXT,
+        size_bytes INTEGER,
+        size_formatted TEXT,
+        jpeg_quality INTEGER,
+        inference_time_ms REAL,
+        capture_time_ms REAL,
+        jpeg_encode_time_ms REAL,
+        image TEXT,
+        message_id TEXT,
+        object_key TEXT,
+        PRIMARY KEY (client_ip, timestamp)
+      )
+    `);
+
+    // 创建质量检测记录表的索引
+    await db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_quality_records_timestamp 
+      ON quality_records(timestamp)
+    `);
+    await db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_quality_records_client_ip
+      ON quality_records(client_ip)
+    `);
+    await db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_quality_records_label
+      ON quality_records(label)
+    `);
+
     logger.info("SQLite数据库初始化完成");
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -540,5 +579,248 @@ export async function closeSQLiteDB(): Promise<void> {
   if (db) {
     await db.close();
     logger.info("SQLite数据库连接已关闭");
+  }
+}
+
+/**
+ * =================================================================
+ *                  管材质量检测记录 (Quality Records)
+ * =================================================================
+ */
+
+export interface QualityRecord {
+  client_ip: string;
+  timestamp: string;
+  label?: string;
+  confidence?: number;
+  frame_id?: number;
+  fis?: number;
+  fps?: number;
+  filename?: string;
+  resolution?: string;
+  size_bytes?: number;
+  size_formatted?: string;
+  jpeg_quality?: number;
+  inference_time_ms?: number;
+  capture_time_ms?: number;
+  jpeg_encode_time_ms?: number;
+  image?: string;
+  message_id?: string;
+  object_key?: string;
+}
+
+/**
+ * 保存管材质量检测记录
+ */
+export async function saveQualityRecord(
+  data: QualityRecord
+): Promise<QualityRecord> {
+  try {
+    const {
+      client_ip,
+      timestamp,
+      label,
+      confidence,
+      frame_id,
+      fis,
+      fps,
+      filename,
+      resolution,
+      size_bytes,
+      size_formatted,
+      jpeg_quality,
+      inference_time_ms,
+      capture_time_ms,
+      jpeg_encode_time_ms,
+      image,
+      message_id,
+      object_key,
+    } = data;
+
+    await db.run(
+      `
+      INSERT INTO quality_records (
+        client_ip, timestamp, label, confidence, frame_id, fis, fps, filename,
+        resolution, size_bytes, size_formatted, jpeg_quality, inference_time_ms,
+        capture_time_ms, jpeg_encode_time_ms, image, message_id, object_key
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+      [
+        client_ip,
+        timestamp,
+        label,
+        confidence,
+        frame_id,
+        fis,
+        fps,
+        filename,
+        resolution,
+        size_bytes,
+        size_formatted,
+        jpeg_quality,
+        inference_time_ms,
+        capture_time_ms,
+        jpeg_encode_time_ms,
+        image,
+        message_id,
+        object_key,
+      ]
+    );
+
+    logger.debug(
+      `质量检测记录已保存到SQLite, client_ip: ${client_ip}, timestamp: ${timestamp}`
+    );
+    return data;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`保存质量检测记录失败: ${errorMessage}`);
+    throw error;
+  }
+}
+
+/**
+ * 获取管材质量检测记录列表
+ * @param options - 过滤和分页选项
+ */
+export async function getQualityRecords(options: {
+  limit?: number;
+  offset?: number;
+  client_ip?: string;
+  label?: string;
+  startTime?: string;
+  endTime?: string;
+}): Promise<Omit<QualityRecord, "image">[]> {
+  try {
+    const {
+      limit = 100,
+      offset = 0,
+      client_ip,
+      label,
+      startTime,
+      endTime,
+    } = options;
+
+    let query = `SELECT 
+        client_ip, timestamp, label, confidence, frame_id, fis, fps, filename,
+        resolution, size_bytes, size_formatted, jpeg_quality, inference_time_ms,
+        capture_time_ms, jpeg_encode_time_ms, message_id, object_key, image
+      FROM quality_records`;
+    const params: any[] = [];
+    const conditions: string[] = [];
+
+    if (client_ip) {
+      conditions.push(`client_ip = ?`);
+      params.push(client_ip);
+    }
+    if (label) {
+      conditions.push(`label = ?`);
+      params.push(label);
+    }
+    if (startTime) {
+      conditions.push(`timestamp >= ?`);
+      params.push(startTime);
+    }
+    if (endTime) {
+      conditions.push(`timestamp <= ?`);
+      params.push(endTime);
+    }
+
+    if (conditions.length > 0) {
+      query += ` WHERE ` + conditions.join(" AND ");
+    }
+
+    query += ` ORDER BY timestamp DESC LIMIT ? OFFSET ?`;
+    params.push(limit, offset);
+
+    const rows = await db.all(query, params);
+    return rows;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`获取质量检测记录列表失败: ${errorMessage}`);
+    throw error;
+  }
+}
+
+/**
+ * 获取单条管材质量检测记录
+ */
+export async function getQualityRecord(
+  client_ip: string,
+  timestamp: string
+): Promise<QualityRecord | null> {
+  try {
+    const row = await db.get<QualityRecord>(
+      `SELECT * FROM quality_records WHERE client_ip = ? AND timestamp = ?`,
+      [client_ip, timestamp]
+    );
+    return row || null;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`获取质量检测记录详情失败: ${errorMessage}`);
+    throw error;
+  }
+}
+
+/**
+ * 更新管材质量检测记录
+ */
+export async function updateQualityRecord(
+  client_ip: string,
+  timestamp: string,
+  data: Partial<Omit<QualityRecord, "client_ip" | "timestamp">>
+): Promise<{ updated: number | undefined }> {
+  try {
+    const fields = Object.keys(data);
+    const values = Object.values(data);
+
+    if (fields.length === 0) {
+      return { updated: 0 };
+    }
+
+    const setClauses = fields.map((field) => `${field} = ?`).join(", ");
+
+    const result = await db.run(
+      `UPDATE quality_records SET ${setClauses} WHERE client_ip = ? AND timestamp = ?`,
+      [...values, client_ip, timestamp]
+    );
+
+    if (result.changes && result.changes > 0) {
+      logger.debug(
+        `质量检测记录已更新, client_ip: ${client_ip}, timestamp: ${timestamp}`
+      );
+    }
+
+    return { updated: result.changes };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`更新质量检测记录失败: ${errorMessage}`);
+    throw error;
+  }
+}
+
+/**
+ * 删除管材质量检测记录
+ */
+export async function deleteQualityRecord(
+  client_ip: string,
+  timestamp: string
+): Promise<{ deleted: number | undefined }> {
+  try {
+    const result = await db.run(
+      `DELETE FROM quality_records WHERE client_ip = ? AND timestamp = ?`,
+      [client_ip, timestamp]
+    );
+
+    if (result.changes && result.changes > 0) {
+      logger.debug(
+        `质量检测记录已删除, client_ip: ${client_ip}, timestamp: ${timestamp}`
+      );
+    }
+
+    return { deleted: result.changes };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`删除质量检测记录失败: ${errorMessage}`);
+    throw error;
   }
 }
