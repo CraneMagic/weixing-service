@@ -873,7 +873,7 @@ export async function getQualityRecords(options: {
   sortBy?: string;
   sortOrder?: "ASC" | "DESC";
 }): Promise<{
-  data: Omit<QualityRecord, "image">[];
+  data: QualityRecord[];
   total: number;
   page: number;
   limit: number;
@@ -903,7 +903,7 @@ export async function getQualityRecords(options: {
     const orderDirection = sortOrder === "ASC" ? "ASC" : "DESC";
 
     let query = `SELECT 
-        client_ip, timestamp, capture_time, label, confidence, frame_id, fis, fps, filename,
+        client_ip, timestamp, capture_time, label, confidence, frame_id, fis, fps, filename, image,
         resolution, size_bytes, size_formatted, jpeg_quality, inference_time_ms,
         capture_time_ms, jpeg_encode_time_ms, message_id, object_key, status, pcNum
       FROM quality_records`;
