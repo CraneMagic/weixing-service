@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import {
   saveMeasurement,
+  getMeasurements as getMeasurementsFromDb,
   getRecentMeasurements,
   getMeasurementById,
   getComplianceStats,
@@ -76,6 +77,49 @@ export async function createMeasurement(req: Request, res: Response) {
     return res.status(500).json({
       success: false,
       message: `保存失败: ${errorMessage}`,
+    });
+  }
+}
+
+export async function getMeasurements(req: Request, res: Response) {
+  try {
+    const {
+      limit = 20,
+      page = 1,
+      spec_id,
+      spec_name,
+      is_compliant,
+      startTime,
+      endTime,
+      sortBy = "timestamp",
+      sortOrder = "DESC",
+    } = req.query;
+
+    const options = {
+      limit: parseInt(limit as string, 10),
+      offset:
+        (parseInt(page as string, 10) - 1) * parseInt(limit as string, 10),
+      spec_id: spec_id as string | undefined,
+      spec_name: spec_name as string | undefined,
+      is_compliant: is_compliant as string | undefined,
+      startTime: startTime as string | undefined,
+      endTime: endTime as string | undefined,
+      sortBy: sortBy as string,
+      sortOrder: sortOrder as "ASC" | "DESC",
+    };
+
+    const result = await getMeasurementsFromDb(options);
+
+    return res.status(200).json({
+      success: true,
+      ...result,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`获取测量数据列表失败: ${errorMessage}`);
+    return res.status(500).json({
+      success: false,
+      message: `获取失败: ${errorMessage}`,
     });
   }
 }

@@ -90,6 +90,8 @@ export async function initializeSQLiteDB(): Promise<void> {
         image TEXT,
         message_id TEXT,
         object_key TEXT,
+        status TEXT,
+        pcNum TEXT,
         PRIMARY KEY (client_ip, timestamp)
       )
     `);
@@ -108,10 +110,41 @@ export async function initializeSQLiteDB(): Promise<void> {
       ON quality_records(label)
     `);
 
+    // 数据迁移：为 quality_records 表添加新列
+    await addColumnIfNotExists("quality_records", "status", "TEXT");
+    await addColumnIfNotExists("quality_records", "pcNum", "TEXT");
+
     logger.info("SQLite数据库初始化完成");
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     logger.error(`SQLite数据库初始化失败: ${errorMessage}`);
+    throw error;
+  }
+}
+
+/**
+ * 检查并添加列（如果不存在）
+ */
+async function addColumnIfNotExists(
+  tableName: string,
+  columnName: string,
+  columnType: string
+) {
+  try {
+    const columns = await db.all(`PRAGMA table_info(${tableName})`);
+    const columnExists = columns.some((col) => col.name === columnName);
+
+    if (!columnExists) {
+      await db.exec(
+        `ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnType}`
+      );
+      logger.info(`已为表 ${tableName} 添加新列: ${columnName}`);
+    }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(
+      `为表 ${tableName} 添加列 ${columnName} 失败: ${errorMessage}`
+    );
     throw error;
   }
 }
@@ -238,6 +271,130 @@ export async function saveMeasurement(
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     logger.error(`保存测量数据失败: ${errorMessage}`);
+    throw error;
+  }
+}
+
+/**
+ * 获取测量数据列表
+ * @param options - 过滤和分页选项
+ */
+export async function getMeasurements(options: {
+  limit?: number;
+  offset?: number;
+  spec_id?: string;
+  spec_name?: string;
+  is_compliant?: string;
+  startTime?: string;
+  endTime?: string;
+  sortBy?: string;
+  sortOrder?: "ASC" | "DESC";
+}): Promise<{
+  data: Omit<any, "corrected_data" | "caculated_data">[];
+  total: number;
+  page: number;
+  limit: number;
+}> {
+  try {
+    const {
+      limit = 20,
+      offset = 0,
+      spec_id,
+      spec_name,
+      is_compliant,
+      startTime,
+      endTime,
+      sortBy = "timestamp",
+      sortOrder = "DESC",
+    } = options;
+
+    const validSortBy = [
+      "timestamp",
+      "spec_id",
+      "spec_name",
+      "is_compliant",
+      "outer_avg",
+      "inner_avg",
+      "wall_avg",
+    ];
+    const orderBy = validSortBy.includes(sortBy) ? sortBy : "timestamp";
+    const orderDirection = sortOrder === "ASC" ? "ASC" : "DESC";
+
+    let query = `SELECT id, timestamp, spec_id, spec_name, outer_max, outer_avg, outer_min, inner_max, inner_avg, inner_min, wall_max, wall_avg, wall_min, outer_non_circularity, inner_non_circularity, is_compliant FROM measurements`;
+    let countQuery = `SELECT COUNT(*) as total FROM measurements`;
+
+    const params: any[] = [];
+    const conditions: string[] = [];
+
+    if (spec_id) {
+      conditions.push(`spec_id = ?`);
+      params.push(spec_id);
+    }
+    if (spec_name) {
+      conditions.push(`spec_name LIKE ?`);
+      params.push(`%${spec_name}%`);
+    }
+    if (is_compliant !== undefined) {
+      conditions.push(`is_compliant = ?`);
+      params.push(is_compliant);
+    }
+    if (startTime) {
+      conditions.push(`timestamp >= ?`);
+      params.push(startTime);
+    }
+    if (endTime) {
+      conditions.push(`timestamp <= ?`);
+      params.push(endTime);
+    }
+
+    if (conditions.length > 0) {
+      const whereClause = ` WHERE ` + conditions.join(" AND ");
+      query += whereClause;
+      countQuery += whereClause;
+    }
+
+    const countResult = await db.get(countQuery, params);
+    const total = countResult.total;
+
+    query += ` ORDER BY ${orderBy} ${orderDirection} LIMIT ? OFFSET ?`;
+    params.push(limit, offset);
+
+    const rows = await db.all(query, params);
+
+    return {
+      data: rows.map((row) => ({
+        id: row.id,
+        timestamp: row.timestamp,
+        specId: row.spec_id,
+        specName: row.spec_name,
+        stats: {
+          outer: {
+            max: row.outer_max,
+            avg: row.outer_avg,
+            min: row.outer_min,
+            nonCircularity: row.outer_non_circularity,
+          },
+          inner: {
+            max: row.inner_max,
+            avg: row.inner_avg,
+            min: row.inner_min,
+            nonCircularity: row.inner_non_circularity,
+          },
+          wall: {
+            max: row.wall_max,
+            avg: row.wall_avg,
+            min: row.wall_min,
+          },
+        },
+        isCompliant: row.is_compliant,
+      })),
+      total,
+      page: offset / limit + 1,
+      limit,
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`获取测量数据列表失败: ${errorMessage}`);
     throw error;
   }
 }
@@ -607,70 +764,33 @@ export interface QualityRecord {
   image?: string;
   message_id?: string;
   object_key?: string;
+  status?: string;
+  pcNum?: string;
 }
 
 /**
- * 保存管材质量检测记录
+ * 保存质量检测记录
+ * @param data 质量检测记录数据
  */
 export async function saveQualityRecord(
   data: QualityRecord
 ): Promise<QualityRecord> {
   try {
-    const {
-      client_ip,
-      timestamp,
-      label,
-      confidence,
-      frame_id,
-      fis,
-      fps,
-      filename,
-      resolution,
-      size_bytes,
-      size_formatted,
-      jpeg_quality,
-      inference_time_ms,
-      capture_time_ms,
-      jpeg_encode_time_ms,
-      image,
-      message_id,
-      object_key,
-    } = data;
+    const columns = Object.keys(data);
+    const placeholders = columns.map(() => "?").join(", ");
+    const values = Object.values(data);
 
-    await db.run(
-      `
-      INSERT INTO quality_records (
-        client_ip, timestamp, label, confidence, frame_id, fis, fps, filename,
-        resolution, size_bytes, size_formatted, jpeg_quality, inference_time_ms,
-        capture_time_ms, jpeg_encode_time_ms, image, message_id, object_key
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `,
-      [
-        client_ip,
-        timestamp,
-        label,
-        confidence,
-        frame_id,
-        fis,
-        fps,
-        filename,
-        resolution,
-        size_bytes,
-        size_formatted,
-        jpeg_quality,
-        inference_time_ms,
-        capture_time_ms,
-        jpeg_encode_time_ms,
-        image,
-        message_id,
-        object_key,
-      ]
-    );
+    const sql = `INSERT INTO quality_records (${columns.join(
+      ", "
+    )}) VALUES (${placeholders})`;
 
-    logger.debug(
-      `质量检测记录已保存到SQLite, client_ip: ${client_ip}, timestamp: ${timestamp}`
-    );
-    return data;
+    await db.run(sql, values);
+
+    logger.debug(`质量检测记录已保存: ${data.client_ip} - ${data.timestamp}`);
+
+    // 返回的数据中不包含image字段
+    const { image, ...returnData } = data;
+    return returnData as QualityRecord;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     logger.error(`保存质量检测记录失败: ${errorMessage}`);
@@ -679,32 +799,55 @@ export async function saveQualityRecord(
 }
 
 /**
- * 获取管材质量检测记录列表
+ * 获取质量检测记录列表
  * @param options - 过滤和分页选项
  */
 export async function getQualityRecords(options: {
   limit?: number;
   offset?: number;
   client_ip?: string;
+  pcNum?: string;
   label?: string;
   startTime?: string;
   endTime?: string;
-}): Promise<Omit<QualityRecord, "image">[]> {
+  sortBy?: string;
+  sortOrder?: "ASC" | "DESC";
+}): Promise<{
+  data: Omit<QualityRecord, "image">[];
+  total: number;
+  page: number;
+  limit: number;
+}> {
   try {
     const {
-      limit = 100,
+      limit = 20,
       offset = 0,
       client_ip,
+      pcNum,
       label,
       startTime,
       endTime,
+      sortBy = "timestamp",
+      sortOrder = "DESC",
     } = options;
+
+    const validSortBy = [
+      "client_ip",
+      "timestamp",
+      "label",
+      "pcNum",
+      "confidence",
+    ];
+    const orderBy = validSortBy.includes(sortBy) ? sortBy : "timestamp";
+    const orderDirection = sortOrder === "ASC" ? "ASC" : "DESC";
 
     let query = `SELECT 
         client_ip, timestamp, label, confidence, frame_id, fis, fps, filename,
         resolution, size_bytes, size_formatted, jpeg_quality, inference_time_ms,
-        capture_time_ms, jpeg_encode_time_ms, message_id, object_key, image
+        capture_time_ms, jpeg_encode_time_ms, message_id, object_key, status, pcNum
       FROM quality_records`;
+    let countQuery = `SELECT COUNT(*) as total FROM quality_records`;
+
     const params: any[] = [];
     const conditions: string[] = [];
 
@@ -712,9 +855,13 @@ export async function getQualityRecords(options: {
       conditions.push(`client_ip = ?`);
       params.push(client_ip);
     }
+    if (pcNum) {
+      conditions.push(`pcNum = ?`);
+      params.push(pcNum);
+    }
     if (label) {
-      conditions.push(`label = ?`);
-      params.push(label);
+      conditions.push(`label LIKE ?`);
+      params.push(`%${label}%`);
     }
     if (startTime) {
       conditions.push(`timestamp >= ?`);
@@ -726,14 +873,27 @@ export async function getQualityRecords(options: {
     }
 
     if (conditions.length > 0) {
-      query += ` WHERE ` + conditions.join(" AND ");
+      const whereClause = ` WHERE ` + conditions.join(" AND ");
+      query += whereClause;
+      countQuery += whereClause;
     }
 
-    query += ` ORDER BY timestamp DESC LIMIT ? OFFSET ?`;
+    // Get total count
+    const countResult = await db.get(countQuery, params);
+    const total = countResult.total;
+
+    // Add sorting and pagination to the main query
+    query += ` ORDER BY ${orderBy} ${orderDirection} LIMIT ? OFFSET ?`;
     params.push(limit, offset);
 
     const rows = await db.all(query, params);
-    return rows;
+
+    return {
+      data: rows,
+      total,
+      page: offset / limit + 1,
+      limit,
+    };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     logger.error(`获取质量检测记录列表失败: ${errorMessage}`);

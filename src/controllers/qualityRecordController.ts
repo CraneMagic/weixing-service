@@ -43,12 +43,35 @@ export async function createQualityRecord(req: Request, res: Response) {
  */
 export async function getQualityRecords(req: Request, res: Response) {
   try {
-    //
-    const options = req.query; // Add pagination, filtering, sorting later
-    const data = await getRecords(options);
+    const {
+      limit = 20,
+      page = 1,
+      client_ip,
+      pcNum,
+      label,
+      startTime,
+      endTime,
+      sortBy = "timestamp",
+      sortOrder = "DESC",
+    } = req.query;
+
+    const options = {
+      limit: parseInt(limit as string, 10),
+      offset:
+        (parseInt(page as string, 10) - 1) * parseInt(limit as string, 10),
+      client_ip: client_ip as string | undefined,
+      pcNum: pcNum as string | undefined,
+      label: label as string | undefined,
+      startTime: startTime as string | undefined,
+      endTime: endTime as string | undefined,
+      sortBy: sortBy as string,
+      sortOrder: sortOrder as "ASC" | "DESC",
+    };
+
+    const result = await getRecords(options);
     return res.status(200).json({
       success: true,
-      data,
+      ...result,
     });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);

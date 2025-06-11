@@ -1,6 +1,7 @@
 import { Router } from "express";
 import {
   createMeasurement,
+  getMeasurements,
   getRecentData,
   getMeasurement,
   getCompliance,
@@ -23,8 +24,11 @@ router.get("/stats/trend", getTrend);
 router.post("/maintenance/cleanup", cleanup);
 router.post("/maintenance/optimize", optimize);
 
+// 获取测量数据列表（支持分页、筛选、排序）
+router.get("/", getMeasurements);
+
 // 获取最近的测量数据
-router.get("/", getRecentData);
+router.get("/recent", getRecentData);
 
 // 获取单条测量数据（放在最后，避免匹配到其他路由）
 router.get("/:id", getMeasurement);
