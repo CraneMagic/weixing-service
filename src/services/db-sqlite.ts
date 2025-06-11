@@ -7,6 +7,32 @@ import fs from "fs";
 let db: Database<sqlite3.Database, sqlite3.Statement>;
 
 /**
+ * 将自定义时间戳字符串转换为ISO 8601格式
+ * @param timestamp "YYYYMMDDHHMMSS..."
+ */
+function convertTimestampToISO(timestamp: string): string | null {
+  if (!timestamp || timestamp.length < 14) {
+    return null;
+  }
+  try {
+    const year = timestamp.substring(0, 4);
+    const month = timestamp.substring(4, 6);
+    const day = timestamp.substring(6, 8);
+    const hour = timestamp.substring(8, 10);
+    const minute = timestamp.substring(10, 12);
+    const second = timestamp.substring(12, 14);
+    // 毫秒是可选的，并且取前3位
+    const millisecond =
+      timestamp.length >= 17 ? timestamp.substring(14, 17) : "000";
+
+    return `${year}-${month}-${day}T${hour}:${minute}:${second}.${millisecond}Z`;
+  } catch (e) {
+    logger.error(`时间戳转换失败: ${timestamp}`);
+    return null;
+  }
+}
+
+/**
  * 初始化SQLite数据库
  */
 export async function initializeSQLiteDB(): Promise<void> {
@@ -74,6 +100,7 @@ export async function initializeSQLiteDB(): Promise<void> {
       CREATE TABLE IF NOT EXISTS quality_records (
         client_ip TEXT NOT NULL,
         timestamp TEXT NOT NULL,
+        capture_time TEXT,
         label TEXT,
         confidence REAL,
         frame_id INTEGER,
@@ -113,6 +140,30 @@ export async function initializeSQLiteDB(): Promise<void> {
     // 数据迁移：为 quality_records 表添加新列
     await addColumnIfNotExists("quality_records", "status", "TEXT");
     await addColumnIfNotExists("quality_records", "pcNum", "TEXT");
+    await addColumnIfNotExists("quality_records", "capture_time", "TEXT");
+
+    // 为旧数据填充 capture_time
+    const needsBackfill = await db.get(
+      `SELECT 1 FROM quality_records WHERE capture_time IS NULL AND timestamp IS NOT NULL LIMIT 1`
+    );
+    if (needsBackfill) {
+      logger.info("需要为旧的质量检测记录填充 capture_time，正在处理...");
+      const recordsToUpdate = await db.all(
+        `SELECT client_ip, timestamp FROM quality_records WHERE capture_time IS NULL AND timestamp IS NOT NULL`
+      );
+      for (const record of recordsToUpdate) {
+        const isoTime = convertTimestampToISO(record.timestamp);
+        if (isoTime) {
+          await db.run(
+            `UPDATE quality_records SET capture_time = ? WHERE client_ip = ? AND timestamp = ?`,
+            [isoTime, record.client_ip, record.timestamp]
+          );
+        }
+      }
+      logger.info(
+        `capture_time 填充完成，共处理 ${recordsToUpdate.length} 条记录。`
+      );
+    }
 
     logger.info("SQLite数据库初始化完成");
   } catch (error) {
@@ -748,6 +799,7 @@ export async function closeSQLiteDB(): Promise<void> {
 export interface QualityRecord {
   client_ip: string;
   timestamp: string;
+  capture_time?: string;
   label?: string;
   confidence?: number;
   frame_id?: number;
@@ -776,6 +828,14 @@ export async function saveQualityRecord(
   data: QualityRecord
 ): Promise<QualityRecord> {
   try {
+    // 自动转换并添加 capture_time
+    if (data.timestamp && !data.capture_time) {
+      const isoTime = convertTimestampToISO(data.timestamp);
+      if (isoTime) {
+        data.capture_time = isoTime;
+      }
+    }
+
     const columns = Object.keys(data);
     const placeholders = columns.map(() => "?").join(", ");
     const values = Object.values(data);
@@ -834,6 +894,7 @@ export async function getQualityRecords(options: {
     const validSortBy = [
       "client_ip",
       "timestamp",
+      "capture_time",
       "label",
       "pcNum",
       "confidence",
@@ -842,7 +903,7 @@ export async function getQualityRecords(options: {
     const orderDirection = sortOrder === "ASC" ? "ASC" : "DESC";
 
     let query = `SELECT 
-        client_ip, timestamp, label, confidence, frame_id, fis, fps, filename,
+        client_ip, timestamp, capture_time, label, confidence, frame_id, fis, fps, filename,
         resolution, size_bytes, size_formatted, jpeg_quality, inference_time_ms,
         capture_time_ms, jpeg_encode_time_ms, message_id, object_key, status, pcNum
       FROM quality_records`;
@@ -864,11 +925,11 @@ export async function getQualityRecords(options: {
       params.push(`%${label}%`);
     }
     if (startTime) {
-      conditions.push(`timestamp >= ?`);
+      conditions.push(`capture_time >= ?`);
       params.push(startTime);
     }
     if (endTime) {
-      conditions.push(`timestamp <= ?`);
+      conditions.push(`capture_time <= ?`);
       params.push(endTime);
     }
 
