@@ -1072,6 +1072,101 @@ export async function getQualityRecordsGroupedBySecond(options: {
 }
 
 /**
+ * 按秒和IP分组获取原始质量检测记录 (分页)
+ */
+export async function getQualityRecordsGroupedBySecondAndIp(options: {
+  limit?: number;
+  offset?: number;
+  include_image?: boolean;
+}): Promise<{
+  data: { [key: string]: { [key: string]: QualityRecord[] } };
+  total: number;
+  page: number;
+  limit: number;
+}> {
+  try {
+    const { limit = 100, offset = 0, include_image = false } = options;
+
+    // 1. 获取分组总数用于分页
+    const countResult = await db.get(
+      `SELECT COUNT(DISTINCT strftime('%Y-%m-%d %H:%M:%S', capture_time)) as total FROM quality_records`
+    );
+    const total = countResult.total || 0;
+
+    // 2. 分页获取唯一的秒级时间组
+    const timeGroupsResult = await db.all(
+      `SELECT DISTINCT strftime('%Y-%m-%d %H:%M:%S', capture_time) as time_group
+       FROM quality_records
+       WHERE time_group IS NOT NULL
+       ORDER BY time_group DESC
+       LIMIT ? OFFSET ?`,
+      [limit, offset]
+    );
+
+    if (timeGroupsResult.length === 0) {
+      return { data: {}, total, page: offset / limit + 1, limit };
+    }
+
+    const timeGroups = timeGroupsResult.map((row) => row.time_group);
+
+    // 3. 获取这些时间组对应的所有记录
+    const placeholders = timeGroups.map(() => "?").join(", ");
+    const selectClause = include_image
+      ? `SELECT *`
+      : `SELECT client_ip, timestamp, capture_time, model_type, label, confidence, frame_id, fis, fps, filename, resolution, size_bytes, size_formatted, jpeg_quality, inference_time_ms, capture_time_ms, jpeg_encode_time_ms, message_id, object_key, status, pcNum`;
+
+    const records = await db.all<QualityRecord[]>(
+      `${selectClause}
+       FROM quality_records
+       WHERE strftime('%Y-%m-%d %H:%M:%S', capture_time) IN (${placeholders})
+       ORDER BY capture_time DESC`,
+      timeGroups
+    );
+
+    // 4. 在内存中按时间、再按IP进行分组
+    const groupedRecords: {
+      [key: string]: { [key: string]: QualityRecord[] };
+    } = {};
+    for (const record of records) {
+      if (record.capture_time) {
+        const timeGroup = record.capture_time
+          .substring(0, 19)
+          .replace("T", " ");
+        if (!groupedRecords[timeGroup]) {
+          groupedRecords[timeGroup] = {};
+        }
+        const ip = record.client_ip;
+        if (!groupedRecords[timeGroup][ip]) {
+          groupedRecords[timeGroup][ip] = [];
+        }
+        groupedRecords[timeGroup][ip].push(record);
+      }
+    }
+
+    // 5. 按查询到的时间组顺序来构造最终结果，以保持分页顺序
+    const orderedGroupedRecords: {
+      [key: string]: { [key: string]: QualityRecord[] };
+    } = {};
+    for (const group of timeGroups) {
+      if (groupedRecords[group]) {
+        orderedGroupedRecords[group] = groupedRecords[group];
+      }
+    }
+
+    return {
+      data: orderedGroupedRecords,
+      total,
+      page: offset / limit + 1,
+      limit,
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`按秒和IP分组获取原始记录失败: ${errorMessage}`);
+    throw error;
+  }
+}
+
+/**
  * 获取单条管材质量检测记录
  */
 export async function getQualityRecord(

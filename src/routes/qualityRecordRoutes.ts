@@ -3,6 +3,7 @@ import {
   createQualityRecord,
   getQualityRecords,
   getQualityRecordsStatsBySecond,
+  getQualityRecordsStatsBySecondAndIp,
   getQualityRecord,
   updateQualityRecord,
   deleteQualityRecord,
@@ -15,6 +16,9 @@ router.post("/", createQualityRecord);
 
 // 获取按秒分组的统计信息
 router.get("/by-second", getQualityRecordsStatsBySecond);
+
+// 获取按秒和IP分组的统计信息
+router.get("/by-second/by-ip", getQualityRecordsStatsBySecondAndIp);
 
 // 获取质量检测记录列表
 router.get("/", getQualityRecords);

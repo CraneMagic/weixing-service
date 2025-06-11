@@ -7,6 +7,7 @@ import {
   updateQualityRecord as updateRecord,
   deleteQualityRecord as deleteRecord,
   getQualityRecordsGroupedBySecond,
+  getQualityRecordsGroupedBySecondAndIp,
 } from "../services/db-sqlite";
 
 /**
@@ -108,6 +109,41 @@ export async function getQualityRecordsStatsBySecond(
     };
 
     const result = await getQualityRecordsGroupedBySecond(options);
+
+    return res.status(200).json({
+      success: true,
+      ...result,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`获取记录统计失败: ${errorMessage}`);
+    return res.status(500).json({
+      success: false,
+      message: `获取失败: ${errorMessage}`,
+    });
+  }
+}
+
+/**
+ * 按秒和IP获取质量检测记录
+ */
+export async function getQualityRecordsStatsBySecondAndIp(
+  req: Request,
+  res: Response
+) {
+  try {
+    const { limit = 100, page = 1, include_image = "false" } = req.query;
+
+    const options = {
+      limit: parseInt(limit as string, 10),
+      offset:
+        (parseInt(page as string, 10) - 1) * parseInt(limit as string, 10),
+      include_image: ["true", "1"].includes(
+        (include_image as string).toLowerCase()
+      ),
+    };
+
+    const result = await getQualityRecordsGroupedBySecondAndIp(options);
 
     return res.status(200).json({
       success: true,

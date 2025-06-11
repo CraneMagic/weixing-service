@@ -48,3 +48,7 @@ GET http://localhost:3000/api/quality-records/by-second?page=1&limit=60&include_
 ###
 # By second with time range
 GET http://localhost:3000/api/quality-records/by-second?startTime=2025-06-08T00:00:00Z&endTime=2025-06-08T23:59:59Z
+
+###
+# By second with ip
+GET http://localhost:3000/api/quality-records/by-second/by-ip?page=1&limit=60
