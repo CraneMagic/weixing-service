@@ -871,6 +871,7 @@ export async function getQualityRecords(options: {
   client_ip?: string;
   pcNum?: string;
   model_type?: string;
+  status?: string;
   label?: string;
   startTime?: string;
   endTime?: string;
@@ -889,6 +890,7 @@ export async function getQualityRecords(options: {
       client_ip,
       pcNum,
       model_type,
+      status,
       label,
       startTime,
       endTime,
@@ -904,6 +906,7 @@ export async function getQualityRecords(options: {
       "pcNum",
       "confidence",
       "model_type",
+      "status",
     ];
     const orderBy = validSortBy.includes(sortBy) ? sortBy : "timestamp";
     const orderDirection = sortOrder === "ASC" ? "ASC" : "DESC";
@@ -929,6 +932,10 @@ export async function getQualityRecords(options: {
     if (model_type) {
       conditions.push(`model_type = ?`);
       params.push(model_type);
+    }
+    if (status) {
+      conditions.push(`status = ?`);
+      params.push(status);
     }
     if (label) {
       conditions.push(`label LIKE ?`);
