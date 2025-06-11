@@ -1282,21 +1282,56 @@ export async function updateStatusFromPassToIgnored(): Promise<{
 }
 
 /**
- * 批量更新: 将 label='fail' 且 status IS NULL 的记录状态更新为 'INREVIEW'
+ * 批量更新: 将一组指定记录或所有符合条件的记录的状态更新为 'INREVIEW'
  */
-export async function updateStatusFromFailToInReview(): Promise<{
+export async function updateStatusFromFailToInReview(
+  records?: { client_ip: string; timestamp: string }[]
+): Promise<{
   updated: number;
 }> {
+  // 全量更新模式
+  if (!records || records.length === 0) {
+    try {
+      const result = await db.run(
+        `UPDATE quality_records SET status = 'INREVIEW' WHERE label = 'fail' AND status IS NULL`
+      );
+      const updated = result.changes || 0;
+      logger.info(
+        `已将 ${updated} 条 'fail' (全量) 记录的状态更新为 'INREVIEW'`
+      );
+      return { updated };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      logger.error(`全量更新 'fail' 记录状态失败: ${errorMessage}`);
+      throw error;
+    }
+  }
+
+  // 精确更新模式
+  let updatedCount = 0;
   try {
-    const result = await db.run(
-      `UPDATE quality_records SET status = 'INREVIEW' WHERE label = 'fail' AND status IS NULL`
+    await db.exec("BEGIN TRANSACTION");
+
+    const stmt = await db.prepare(
+      `UPDATE quality_records SET status = 'INREVIEW' WHERE client_ip = ? AND timestamp = ?`
     );
-    const updated = result.changes || 0;
-    logger.info(`已将 ${updated} 条 'fail' 记录的状态更新为 'INREVIEW'`);
-    return { updated };
+
+    for (const record of records) {
+      const result = await stmt.run(record.client_ip, record.timestamp);
+      if (result.changes) {
+        updatedCount += result.changes;
+      }
+    }
+
+    await stmt.finalize();
+    await db.exec("COMMIT");
+    logger.info(`已将 ${updatedCount} 条 (指定) 记录的状态更新为 'INREVIEW'`);
+    return { updated: updatedCount };
   } catch (error) {
+    await db.exec("ROLLBACK");
     const errorMessage = error instanceof Error ? error.message : String(error);
-    logger.error(`批量更新 'fail' 记录状态失败: ${errorMessage}`);
+    logger.error(`批量更新 (指定) 记录状态失败: ${errorMessage}`);
     throw error;
   }
 }

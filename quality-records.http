@@ -60,5 +60,17 @@ GET http://localhost:3000/api/quality-records/by-second/by-ip?page=1&limit=60
 POST http://localhost:3000/api/quality-records/update-status/pass-to-ignored
 
 ###
-# Update status to 'INREVIEW' for all records with label 'fail' and status is NULL
+# Update status to 'INREVIEW' for a specific list of records
 POST http://localhost:3000/api/quality-records/update-status/fail-to-inreview
+Content-Type: application/json
+
+[
+  {
+    "client_ip": "192.168.1.101",
+    "timestamp": "20250612100000123456"
+  },
+  {
+    "client_ip": "192.168.1.102",
+    "timestamp": "20250612100001234567"
+  }
+]

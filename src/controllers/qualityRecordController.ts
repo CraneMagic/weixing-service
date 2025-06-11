@@ -148,19 +148,32 @@ export async function updatePassToIgnored(req: Request, res: Response) {
 }
 
 /**
- * 批量更新 "fail" 且状态为 null 的记录为 "INREVIEW"
+ * 批量更新指定记录的状态为 "INREVIEW"
  */
 export async function updateFailToInReview(req: Request, res: Response) {
   try {
-    const result = await updateFailService();
+    const records = req.body;
+
+    // 如果请求体为空或不是一个数组，则执行全量更新
+    if (!records || !Array.isArray(records) || records.length === 0) {
+      const result = await updateFailService();
+      return res.status(200).json({
+        success: true,
+        message: `成功将 ${result.updated} 条 (全量) "fail" 记录的状态更新为 "INREVIEW"`,
+        data: result,
+      });
+    }
+
+    // 否则，执行精确更新
+    const result = await updateFailService(records);
     return res.status(200).json({
       success: true,
-      message: `成功将 ${result.updated} 条 "fail" 记录的状态更新为 "INREVIEW"`,
+      message: `成功将 ${result.updated} 条 (指定) 记录的状态更新为 "INREVIEW"`,
       data: result,
     });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    logger.error(`批量更新 "fail" 记录状态失败: ${errorMessage}`);
+    logger.error(`批量更新记录状态失败: ${errorMessage}`);
     return res.status(500).json({
       success: false,
       message: `批量更新失败: ${errorMessage}`,
