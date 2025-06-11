@@ -10,8 +10,8 @@ export async function setNormalState(req: Request, res: Response) {
     // 关闭红灯+蜂鸣: A0 07 00 A7
     await sendHexCommand([0xa0, 0x07, 0x00, 0xa7]);
 
-    // // 关闭红灯: A0 03 00 A3
-    // await sendHexCommand([0xa0, 0x03, 0x00, 0xa3]);
+    // 关闭红灯: A0 03 00 A3
+    await sendHexCommand([0xa0, 0x03, 0x00, 0xa3]);
 
     // 打开绿灯: A0 02 01 A3
     await sendHexCommand([0xa0, 0x02, 0x01, 0xa3]);
@@ -41,11 +41,13 @@ export async function setAlarmState(req: Request, res: Response) {
     // 关闭绿灯: A0 02 00 A2
     await sendHexCommand([0xa0, 0x02, 0x00, 0xa2]);
 
-    // // 打开红灯: A0 03 01 A4
-    // await sendHexCommand([0xa0, 0x03, 0x01, 0xa4]);
-
-    // 打开红灯+蜂鸣: A0 07 01 A8
-    await sendHexCommand([0xa0, 0x07, 0x01, 0xa8]);
+    if (process.env.ALARM_WITH_SOUND === "false") {
+      // 打开红灯: A0 03 01 A4
+      await sendHexCommand([0xa0, 0x03, 0x01, 0xa4]);
+    } else {
+      // 打开红灯+蜂鸣: A0 07 01 A8
+      await sendHexCommand([0xa0, 0x07, 0x01, 0xa8]);
+    }
 
     logger.info("已切换到报警状态: 红灯开，绿灯关");
 
