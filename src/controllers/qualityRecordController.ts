@@ -203,11 +203,11 @@ export async function getQualityRecordsStatsBySecondAndIp(
       : new Date(endTime.getTime() - 1 * 60 * 60 * 1000); // 默认查询1小时
 
     // 增加查询范围限制，防止内存溢出
-    const MAX_RANGE_MS = 7 * 24 * 60 * 60 * 1000; // 7天
+    const MAX_RANGE_MS = 30 * 24 * 60 * 60 * 1000; // 30天
     if (endTime.getTime() - startTime.getTime() > MAX_RANGE_MS) {
       return res.status(400).json({
         success: false,
-        message: "查询时间范围不能超过7天",
+        message: "查询时间范围不能超过30天",
       });
     }
 
