@@ -41,7 +41,7 @@ export async function setAlarmState(req: Request, res: Response) {
     // 关闭绿灯: A0 02 00 A2
     await sendHexCommand([0xa0, 0x02, 0x00, 0xa2]);
 
-    if (process.env.ALARM_WITH_SOUND === "false") {
+    if (process.env.ALARM_WITH_SOUND !== "true") {
       // 打开红灯: A0 03 01 A4
       await sendHexCommand([0xa0, 0x03, 0x01, 0xa4]);
     } else {
