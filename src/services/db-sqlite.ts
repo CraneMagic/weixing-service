@@ -101,6 +101,7 @@ export async function initializeSQLiteDB(): Promise<void> {
         client_ip TEXT NOT NULL,
         timestamp TEXT NOT NULL,
         capture_time TEXT,
+        model_type TEXT,
         label TEXT,
         confidence REAL,
         frame_id INTEGER,
@@ -141,6 +142,7 @@ export async function initializeSQLiteDB(): Promise<void> {
     await addColumnIfNotExists("quality_records", "status", "TEXT");
     await addColumnIfNotExists("quality_records", "pcNum", "TEXT");
     await addColumnIfNotExists("quality_records", "capture_time", "TEXT");
+    await addColumnIfNotExists("quality_records", "model_type", "TEXT");
 
     // 为旧数据填充 capture_time
     const needsBackfill = await db.get(
@@ -800,6 +802,7 @@ export interface QualityRecord {
   client_ip: string;
   timestamp: string;
   capture_time?: string;
+  model_type?: string;
   label?: string;
   confidence?: number;
   frame_id?: number;
@@ -867,6 +870,7 @@ export async function getQualityRecords(options: {
   offset?: number;
   client_ip?: string;
   pcNum?: string;
+  model_type?: string;
   label?: string;
   startTime?: string;
   endTime?: string;
@@ -884,6 +888,7 @@ export async function getQualityRecords(options: {
       offset = 0,
       client_ip,
       pcNum,
+      model_type,
       label,
       startTime,
       endTime,
@@ -898,6 +903,7 @@ export async function getQualityRecords(options: {
       "label",
       "pcNum",
       "confidence",
+      "model_type",
     ];
     const orderBy = validSortBy.includes(sortBy) ? sortBy : "timestamp";
     const orderDirection = sortOrder === "ASC" ? "ASC" : "DESC";
@@ -905,7 +911,7 @@ export async function getQualityRecords(options: {
     let query = `SELECT 
         client_ip, timestamp, capture_time, label, confidence, frame_id, fis, fps, filename, image,
         resolution, size_bytes, size_formatted, jpeg_quality, inference_time_ms,
-        capture_time_ms, jpeg_encode_time_ms, message_id, object_key, status, pcNum
+        capture_time_ms, jpeg_encode_time_ms, message_id, object_key, status, pcNum, model_type
       FROM quality_records`;
     let countQuery = `SELECT COUNT(*) as total FROM quality_records`;
 
@@ -919,6 +925,10 @@ export async function getQualityRecords(options: {
     if (pcNum) {
       conditions.push(`pcNum = ?`);
       params.push(pcNum);
+    }
+    if (model_type) {
+      conditions.push(`model_type = ?`);
+      params.push(model_type);
     }
     if (label) {
       conditions.push(`label LIKE ?`);
