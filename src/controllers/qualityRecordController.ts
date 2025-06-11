@@ -8,6 +8,8 @@ import {
   deleteQualityRecord as deleteRecord,
   getQualityRecordsGroupedBySecond,
   getQualityRecordsGroupedBySecondAndIp,
+  updateStatusFromPassToIgnored as updatePassService,
+  updateStatusFromFailToInReview as updateFailService,
 } from "../services/db-sqlite";
 
 /**
@@ -120,6 +122,48 @@ export async function getQualityRecordsStatsBySecond(
     return res.status(500).json({
       success: false,
       message: `获取失败: ${errorMessage}`,
+    });
+  }
+}
+
+/**
+ * 批量更新 "pass" 记录的状态为 "IGNORED"
+ */
+export async function updatePassToIgnored(req: Request, res: Response) {
+  try {
+    const result = await updatePassService();
+    return res.status(200).json({
+      success: true,
+      message: `成功将 ${result.updated} 条 "pass" 记录的状态更新为 "IGNORED"`,
+      data: result,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`批量更新 "pass" 记录状态失败: ${errorMessage}`);
+    return res.status(500).json({
+      success: false,
+      message: `批量更新失败: ${errorMessage}`,
+    });
+  }
+}
+
+/**
+ * 批量更新 "fail" 且状态为 null 的记录为 "INREVIEW"
+ */
+export async function updateFailToInReview(req: Request, res: Response) {
+  try {
+    const result = await updateFailService();
+    return res.status(200).json({
+      success: true,
+      message: `成功将 ${result.updated} 条 "fail" 记录的状态更新为 "INREVIEW"`,
+      data: result,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`批量更新 "fail" 记录状态失败: ${errorMessage}`);
+    return res.status(500).json({
+      success: false,
+      message: `批量更新失败: ${errorMessage}`,
     });
   }
 }

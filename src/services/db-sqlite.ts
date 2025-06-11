@@ -839,6 +839,13 @@ export async function saveQualityRecord(
       }
     }
 
+    // 根据 label 自动设置 status
+    if (data.label === "pass") {
+      data.status = "IGNORED";
+    } else if (data.label === "fail") {
+      data.status = undefined; // NeDB/SQLite 会将其视作 NULL
+    }
+
     const columns = Object.keys(data);
     const placeholders = columns.map(() => "?").join(", ");
     const values = Object.values(data);
@@ -933,9 +940,13 @@ export async function getQualityRecords(options: {
       conditions.push(`model_type = ?`);
       params.push(model_type);
     }
-    if (status) {
-      conditions.push(`status = ?`);
-      params.push(status);
+    if (status !== undefined) {
+      if (status.toLowerCase() === "null") {
+        conditions.push(`status IS NULL`);
+      } else {
+        conditions.push(`status = ?`);
+        params.push(status);
+      }
     }
     if (label) {
       conditions.push(`label LIKE ?`);
@@ -1246,6 +1257,46 @@ export async function deleteQualityRecord(
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     logger.error(`删除质量检测记录失败: ${errorMessage}`);
+    throw error;
+  }
+}
+
+/**
+ * 批量更新: 将 label='pass' 的记录状态更新为 'IGNORED'
+ */
+export async function updateStatusFromPassToIgnored(): Promise<{
+  updated: number;
+}> {
+  try {
+    const result = await db.run(
+      `UPDATE quality_records SET status = 'IGNORED' WHERE label = 'pass'`
+    );
+    const updated = result.changes || 0;
+    logger.info(`已将 ${updated} 条 'pass' 记录的状态更新为 'IGNORED'`);
+    return { updated };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`批量更新 'pass' 记录状态失败: ${errorMessage}`);
+    throw error;
+  }
+}
+
+/**
+ * 批量更新: 将 label='fail' 且 status IS NULL 的记录状态更新为 'INREVIEW'
+ */
+export async function updateStatusFromFailToInReview(): Promise<{
+  updated: number;
+}> {
+  try {
+    const result = await db.run(
+      `UPDATE quality_records SET status = 'INREVIEW' WHERE label = 'fail' AND status IS NULL`
+    );
+    const updated = result.changes || 0;
+    logger.info(`已将 ${updated} 条 'fail' 记录的状态更新为 'INREVIEW'`);
+    return { updated };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`批量更新 'fail' 记录状态失败: ${errorMessage}`);
     throw error;
   }
 }

@@ -6,6 +6,8 @@ import {
   getQualityRecordsStatsBySecondAndIp,
   getQualityRecord,
   updateQualityRecord,
+  updatePassToIgnored,
+  updateFailToInReview,
   deleteQualityRecord,
 } from "../controllers/qualityRecordController";
 
@@ -13,6 +15,10 @@ const router = Router();
 
 // 创建质量检测记录
 router.post("/", createQualityRecord);
+
+// 批量更新状态
+router.post("/update-status/pass-to-ignored", updatePassToIgnored);
+router.post("/update-status/fail-to-inreview", updateFailToInReview);
 
 // 获取按秒分组的统计信息
 router.get("/by-second", getQualityRecordsStatsBySecond);

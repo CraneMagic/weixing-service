@@ -52,3 +52,13 @@ GET http://localhost:3000/api/quality-records/by-second?startTime=2025-06-08T00:
 ###
 # By second with ip
 GET http://localhost:3000/api/quality-records/by-second/by-ip?page=1&limit=60
+
+### Bulk status updates
+
+###
+# Update status to 'IGNORED' for all records with label 'pass'
+POST http://localhost:3000/api/quality-records/update-status/pass-to-ignored
+
+###
+# Update status to 'INREVIEW' for all records with label 'fail' and status is NULL
+POST http://localhost:3000/api/quality-records/update-status/fail-to-inreview
