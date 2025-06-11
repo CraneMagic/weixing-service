@@ -137,12 +137,14 @@ export async function initializeSQLiteDB(): Promise<void> {
       CREATE INDEX IF NOT EXISTS idx_quality_records_label
       ON quality_records(label)
     `);
+    await db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_quality_records_capture_time
+      ON quality_records(capture_time)
+    `);
 
     // 数据迁移：为 quality_records 表添加新列
     await addColumnIfNotExists("quality_records", "status", "TEXT");
     await addColumnIfNotExists("quality_records", "pcNum", "TEXT");
-    await addColumnIfNotExists("quality_records", "capture_time", "TEXT");
-    await addColumnIfNotExists("quality_records", "model_type", "TEXT");
 
     // 为旧数据填充 capture_time
     const needsBackfill = await db.get(
@@ -1098,6 +1100,8 @@ export async function getQualityRecordsGroupedBySecondAndIp(options: {
   limit?: number;
   offset?: number;
   include_image?: boolean;
+  startTime: string;
+  endTime: string;
 }): Promise<{
   data: { [key: string]: { [key: string]: QualityRecord[] } };
   total: number;
@@ -1105,11 +1109,20 @@ export async function getQualityRecordsGroupedBySecondAndIp(options: {
   limit: number;
 }> {
   try {
-    const { limit = 100, offset = 0, include_image = false } = options;
+    const {
+      limit = 100,
+      offset = 0,
+      include_image = false,
+      startTime,
+      endTime,
+    } = options;
 
-    // 1. 获取分组总数用于分页
+    // 1. 在指定时间范围内，获取分组总数用于分页
     const countResult = await db.get(
-      `SELECT COUNT(DISTINCT strftime('%Y-%m-%d %H:%M:%S', capture_time)) as total FROM quality_records`
+      `SELECT COUNT(DISTINCT strftime('%Y-%m-%d %H:%M:%S', capture_time)) as total
+       FROM quality_records
+       WHERE capture_time BETWEEN ? AND ?`,
+      [startTime, endTime]
     );
     const total = countResult.total || 0;
 
@@ -1117,10 +1130,10 @@ export async function getQualityRecordsGroupedBySecondAndIp(options: {
     const timeGroupsResult = await db.all(
       `SELECT DISTINCT strftime('%Y-%m-%d %H:%M:%S', capture_time) as time_group
        FROM quality_records
-       WHERE time_group IS NOT NULL
+       WHERE capture_time BETWEEN ? AND ? AND time_group IS NOT NULL
        ORDER BY time_group DESC
        LIMIT ? OFFSET ?`,
-      [limit, offset]
+      [startTime, endTime, limit, offset]
     );
 
     if (timeGroupsResult.length === 0) {
@@ -1129,8 +1142,12 @@ export async function getQualityRecordsGroupedBySecondAndIp(options: {
 
     const timeGroups = timeGroupsResult.map((row) => row.time_group);
 
-    // 3. 获取这些时间组对应的所有记录
-    const placeholders = timeGroups.map(() => "?").join(", ");
+    // 3. 高效获取这些时间组对应的所有记录
+    const firstTimeGroup = timeGroups[timeGroups.length - 1]; // e.g., '2025-06-12 10:00:01'
+    const lastTimeGroup = timeGroups[0]; // e.g., '2025-06-12 10:00:50'
+    const recordStartTime = `${firstTimeGroup.replace(" ", "T")}.000Z`;
+    const recordEndTime = `${lastTimeGroup.replace(" ", "T")}.999Z`;
+
     const selectClause = include_image
       ? `SELECT *`
       : `SELECT client_ip, timestamp, capture_time, model_type, label, confidence, frame_id, fis, fps, filename, resolution, size_bytes, size_formatted, jpeg_quality, inference_time_ms, capture_time_ms, jpeg_encode_time_ms, message_id, object_key, status, pcNum`;
@@ -1138,9 +1155,9 @@ export async function getQualityRecordsGroupedBySecondAndIp(options: {
     const records = await db.all<QualityRecord[]>(
       `${selectClause}
        FROM quality_records
-       WHERE strftime('%Y-%m-%d %H:%M:%S', capture_time) IN (${placeholders})
+       WHERE capture_time BETWEEN ? AND ?
        ORDER BY capture_time DESC`,
-      timeGroups
+      [recordStartTime, recordEndTime]
     );
 
     // 4. 在内存中按时间、再按IP进行分组
@@ -1152,6 +1169,8 @@ export async function getQualityRecordsGroupedBySecondAndIp(options: {
         const timeGroup = record.capture_time
           .substring(0, 19)
           .replace("T", " ");
+        if (!timeGroups.includes(timeGroup)) continue; // 仅保留当前页的时间组
+
         if (!groupedRecords[timeGroup]) {
           groupedRecords[timeGroup] = {};
         }
@@ -1163,7 +1182,7 @@ export async function getQualityRecordsGroupedBySecondAndIp(options: {
       }
     }
 
-    // 5. 按查询到的时间组顺序来构造最终结果，以保持分页顺序
+    // 5. 按查询到的时间组顺序来构造最终结果
     const orderedGroupedRecords: {
       [key: string]: { [key: string]: QualityRecord[] };
     } = {};

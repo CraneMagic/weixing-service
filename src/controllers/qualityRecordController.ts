@@ -189,7 +189,27 @@ export async function getQualityRecordsStatsBySecondAndIp(
   res: Response
 ) {
   try {
-    const { limit = 100, page = 1, include_image = "false" } = req.query;
+    const {
+      limit = 100,
+      page = 1,
+      include_image = "false",
+      startTime: startTimeStr,
+      endTime: endTimeStr,
+    } = req.query;
+
+    const endTime = endTimeStr ? new Date(endTimeStr as string) : new Date();
+    const startTime = startTimeStr
+      ? new Date(startTimeStr as string)
+      : new Date(endTime.getTime() - 1 * 60 * 60 * 1000); // 默认查询1小时
+
+    // 增加查询范围限制，防止内存溢出
+    const MAX_RANGE_MS = 7 * 24 * 60 * 60 * 1000; // 7天
+    if (endTime.getTime() - startTime.getTime() > MAX_RANGE_MS) {
+      return res.status(400).json({
+        success: false,
+        message: "查询时间范围不能超过7天",
+      });
+    }
 
     const options = {
       limit: parseInt(limit as string, 10),
@@ -198,6 +218,8 @@ export async function getQualityRecordsStatsBySecondAndIp(
       include_image: ["true", "1"].includes(
         (include_image as string).toLowerCase()
       ),
+      startTime: startTime.toISOString(),
+      endTime: endTime.toISOString(),
     };
 
     const result = await getQualityRecordsGroupedBySecondAndIp(options);
