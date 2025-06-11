@@ -6,6 +6,7 @@ import {
   getQualityRecord as getRecord,
   updateQualityRecord as updateRecord,
   deleteQualityRecord as deleteRecord,
+  getQualityRecordsGroupedBySecond,
 } from "../services/db-sqlite";
 
 /**
@@ -80,6 +81,41 @@ export async function getQualityRecords(req: Request, res: Response) {
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     logger.error(`获取质量检测记录列表失败: ${errorMessage}`);
+    return res.status(500).json({
+      success: false,
+      message: `获取失败: ${errorMessage}`,
+    });
+  }
+}
+
+/**
+ * 按秒获取质量检测记录统计
+ */
+export async function getQualityRecordsStatsBySecond(
+  req: Request,
+  res: Response
+) {
+  try {
+    const { limit = 100, page = 1, include_image = "false" } = req.query;
+
+    const options = {
+      limit: parseInt(limit as string, 10),
+      offset:
+        (parseInt(page as string, 10) - 1) * parseInt(limit as string, 10),
+      include_image: ["true", "1"].includes(
+        (include_image as string).toLowerCase()
+      ),
+    };
+
+    const result = await getQualityRecordsGroupedBySecond(options);
+
+    return res.status(200).json({
+      success: true,
+      ...result,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`获取记录统计失败: ${errorMessage}`);
     return res.status(500).json({
       success: false,
       message: `获取失败: ${errorMessage}`,

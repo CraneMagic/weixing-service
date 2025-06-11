@@ -32,3 +32,19 @@ GET http://localhost:3000/api/quality-records?sortBy=timestamp&sortOrder=DESC
 ### Combined query
 # Get records for pcNum 'PC-002', filter by label 'ok', and sort by timestamp ascending
 GET http://localhost:3000/api/quality-records?pcNum=PC-002&label=ok&sortBy=timestamp&sortOrder=ASC 
+
+###
+# By second
+GET http://localhost:3000/api/quality-records/by-second
+
+###
+# By second with pagination
+GET http://localhost:3000/api/quality-records/by-second?page=1&limit=60
+
+###
+# By second with include_image
+GET http://localhost:3000/api/quality-records/by-second?page=1&limit=60&include_image=true
+
+###
+# By second with time range
+GET http://localhost:3000/api/quality-records/by-second?startTime=2025-06-08T00:00:00Z&endTime=2025-06-08T23:59:59Z
