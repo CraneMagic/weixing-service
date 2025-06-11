@@ -29,7 +29,7 @@ export async function createQualityRecord(req: Request, res: Response) {
 
     return res.status(201).json({
       success: true,
-      message: "质量检测记录已保存",
+      message: "质量检测记录已保存或更新",
       data: result,
     });
   } catch (error) {

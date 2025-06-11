@@ -850,20 +850,29 @@ export async function saveQualityRecord(
     const placeholders = columns.map(() => "?").join(", ");
     const values = Object.values(data);
 
-    const sql = `INSERT INTO quality_records (${columns.join(
-      ", "
-    )}) VALUES (${placeholders})`;
+    // 在冲突时需要更新的列（除主键外所有列）
+    const updateColumns = columns
+      .filter((col) => col !== "client_ip" && col !== "timestamp")
+      .map((col) => `${col} = excluded.${col}`)
+      .join(", ");
+
+    const sql = `
+      INSERT INTO quality_records (${columns.join(", ")})
+      VALUES (${placeholders})
+      ON CONFLICT(client_ip, timestamp)
+      DO UPDATE SET ${updateColumns}
+    `;
 
     await db.run(sql, values);
 
-    logger.debug(`质量检测记录已保存: ${data.client_ip} - ${data.timestamp}`);
+    logger.debug(`记录已保存或更新: ${data.client_ip} - ${data.timestamp}`);
 
     // 返回的数据中不包含image字段
     const { image, ...returnData } = data;
     return returnData as QualityRecord;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    logger.error(`保存质量检测记录失败: ${errorMessage}`);
+    logger.error(`保存或更新质量检测记录失败: ${errorMessage}`);
     throw error;
   }
 }
