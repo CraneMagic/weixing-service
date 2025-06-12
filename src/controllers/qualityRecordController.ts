@@ -11,6 +11,7 @@ import {
   updateStatusFromPassToIgnored as updatePassService,
   updateStatusFromFailToInReview as updateFailService,
 } from "../services/db-sqlite";
+import { getImagePath } from "../utils/imageStore";
 
 /**
  * 创建管材质量检测记录
@@ -122,6 +123,39 @@ export async function getQualityRecordsStatsBySecond(
     return res.status(500).json({
       success: false,
       message: `获取失败: ${errorMessage}`,
+    });
+  }
+}
+
+/**
+ * 获取图片文件
+ */
+export async function getImage(req: Request, res: Response) {
+  try {
+    const filename = req.params.filename;
+    if (!filename) {
+      return res.status(400).json({
+        success: false,
+        message: "缺少文件名",
+      });
+    }
+
+    const imagePath = getImagePath(filename);
+
+    if (imagePath) {
+      res.sendFile(imagePath);
+    } else {
+      res.status(404).json({
+        success: false,
+        message: "未找到图片文件",
+      });
+    }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`获取图片失败: ${errorMessage}`);
+    return res.status(500).json({
+      success: false,
+      message: `获取图片失败: ${errorMessage}`,
     });
   }
 }

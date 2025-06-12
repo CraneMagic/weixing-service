@@ -3,6 +3,7 @@ import { open, Database } from "sqlite";
 import { logger } from "../utils/logger";
 import path from "path";
 import fs from "fs";
+import { saveImageFromBase64 } from "../utils/imageStore";
 
 let db: Database<sqlite3.Database, sqlite3.Statement>;
 
@@ -785,6 +786,22 @@ export async function optimizeDatabase(): Promise<boolean> {
 }
 
 /**
+ * 压缩数据库以回收空间
+ */
+export async function vacuumDatabase(): Promise<boolean> {
+  try {
+    logger.info("正在执行 VACUUM 操作来回收数据库空间...");
+    await db.exec("VACUUM");
+    logger.info("VACUUM 操作完成。");
+    return true;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`VACUUM 操作失败: ${errorMessage}`);
+    return false;
+  }
+}
+
+/**
  * 关闭数据库连接
  */
 export async function closeSQLiteDB(): Promise<void> {
@@ -818,7 +835,7 @@ export interface QualityRecord {
   inference_time_ms?: number;
   capture_time_ms?: number;
   jpeg_encode_time_ms?: number;
-  image?: string;
+  image?: string | null;
   message_id?: string;
   object_key?: string;
   status?: string;
@@ -846,6 +863,17 @@ export async function saveQualityRecord(
       data.status = "IGNORED";
     } else if (data.label === "fail") {
       data.status = undefined; // NeDB/SQLite 会将其视作 NULL
+    }
+
+    // 将图片保存到文件系统，并用文件名更新 object_key
+    if (data.image) {
+      // 使用 "ip_timestamp" 作为唯一文件名
+      const filename = `${data.client_ip}_${data.timestamp}`;
+      const savedFilename = saveImageFromBase64(data.image, filename);
+      if (savedFilename) {
+        data.object_key = savedFilename;
+      }
+      delete data.image; // 确保图片数据不存入数据库
     }
 
     const columns = Object.keys(data);
@@ -1362,4 +1390,15 @@ export async function updateStatusFromFailToInReview(
     logger.error(`批量更新 (指定) 记录状态失败: ${errorMessage}`);
     throw error;
   }
+}
+
+/**
+ * 获取数据库实例
+ * @returns {Database}
+ */
+export function getDbInstance(): Database<sqlite3.Database, sqlite3.Statement> {
+  if (!db) {
+    throw new Error("数据库未初始化，无法获取实例。");
+  }
+  return db;
 }

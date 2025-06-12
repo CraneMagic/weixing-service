@@ -78,3 +78,8 @@ Content-Type: application/json
     "timestamp": "20250612100001234567"
   }
 ]
+
+### Get an image by its filename (object_key)
+# @name getImage
+# NOTE: Replace the filename with a real one from your database's object_key field
+GET http://localhost:3000/api/quality-records/images/192.168.1.119_20250613001750616992.jpg

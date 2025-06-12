@@ -12,6 +12,7 @@ import { logger } from "./utils/logger";
 import { initializeDatabase } from "./services/db";
 import { initializeSQLiteDB } from "./services/db-sqlite";
 import { setupCleanupJob } from "./services/cleanup";
+import { initializeScheduler } from "./services/scheduler";
 
 // 加载环境变量
 dotenv.config();
@@ -32,6 +33,9 @@ initializeDatabase();
       10
     );
     setupCleanupJob(daysToKeep, cleanupInterval);
+
+    // 初始化定时维护任务
+    initializeScheduler();
   } catch (error) {
     logger.error(
       `SQLite数据库初始化失败: ${

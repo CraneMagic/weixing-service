@@ -9,9 +9,13 @@ import {
   updatePassToIgnored,
   updateFailToInReview,
   deleteQualityRecord,
+  getImage,
 } from "../controllers/qualityRecordController";
 
 const router = Router();
+
+// 图片获取路由
+router.get("/images/:filename", getImage);
 
 // 创建质量检测记录
 router.post("/", createQualityRecord);
