@@ -229,6 +229,8 @@ export async function getQualityRecordsStatsBySecondAndIp(
       include_image = "false",
       startTime: startTimeStr,
       endTime: endTimeStr,
+      label,
+      status,
     } = req.query;
 
     const endTime = endTimeStr ? new Date(endTimeStr as string) : new Date();
@@ -254,6 +256,8 @@ export async function getQualityRecordsStatsBySecondAndIp(
       ),
       startTime: startTime.toISOString(),
       endTime: endTime.toISOString(),
+      label: label as string | undefined,
+      status: status as string | undefined,
     };
 
     const result = await getQualityRecordsGroupedBySecondAndIp(options);

@@ -1130,6 +1130,8 @@ export async function getQualityRecordsGroupedBySecondAndIp(options: {
   include_image?: boolean;
   startTime: string;
   endTime: string;
+  label?: string;
+  status?: string;
 }): Promise<{
   data: { [key: string]: { [key: string]: QualityRecord[] } };
   total: number;
@@ -1143,14 +1145,41 @@ export async function getQualityRecordsGroupedBySecondAndIp(options: {
       include_image = false,
       startTime,
       endTime,
+      label,
+      status,
     } = options;
 
-    // 1. 在指定时间范围内，获取分组总数用于分页
+    const baseWhereConditions: string[] = [];
+    const baseParams: any[] = [];
+
+    if (label) {
+      baseWhereConditions.push("label = ?");
+      baseParams.push(label);
+    }
+    if (status !== undefined) {
+      if (status.toLowerCase() === "null") {
+        baseWhereConditions.push("status IS NULL");
+      } else if (status === "") {
+        // status='' 表示查询所有，因此不添加条件
+      } else {
+        baseWhereConditions.push("status = ?");
+        baseParams.push(status);
+      }
+    }
+
+    const baseWhereClause =
+      baseWhereConditions.length > 0
+        ? `AND ${baseWhereConditions.join(" AND ")}`
+        : "";
+
+    // 1. 在指定时间范围和条件下，获取分组总数用于分页
+    const countWhereClause = `WHERE capture_time BETWEEN ? AND ? ${baseWhereClause}`;
+    const countParams = [startTime, endTime, ...baseParams];
     const countResult = await db.get(
       `SELECT COUNT(DISTINCT strftime('%Y-%m-%d %H:%M:%S', capture_time)) as total
        FROM quality_records
-       WHERE capture_time BETWEEN ? AND ?`,
-      [startTime, endTime]
+       ${countWhereClause}`,
+      countParams
     );
     const total = countResult.total || 0;
 
@@ -1158,10 +1187,10 @@ export async function getQualityRecordsGroupedBySecondAndIp(options: {
     const timeGroupsResult = await db.all(
       `SELECT DISTINCT strftime('%Y-%m-%d %H:%M:%S', capture_time) as time_group
        FROM quality_records
-       WHERE capture_time BETWEEN ? AND ? AND time_group IS NOT NULL
+       ${countWhereClause} AND time_group IS NOT NULL
        ORDER BY time_group DESC
        LIMIT ? OFFSET ?`,
-      [startTime, endTime, limit, offset]
+      [...countParams, limit, offset]
     );
 
     if (timeGroupsResult.length === 0) {
@@ -1180,12 +1209,16 @@ export async function getQualityRecordsGroupedBySecondAndIp(options: {
       ? `SELECT *`
       : `SELECT client_ip, timestamp, capture_time, model_type, label, confidence, frame_id, fis, fps, filename, resolution, size_bytes, size_formatted, jpeg_quality, inference_time_ms, capture_time_ms, jpeg_encode_time_ms, message_id, object_key, status, pcNum`;
 
+    // 在获取记录时也应用同样的筛选条件
+    const recordsWhereClause = `WHERE capture_time BETWEEN ? AND ? ${baseWhereClause}`;
+    const recordsParams = [recordStartTime, recordEndTime, ...baseParams];
+
     const records = await db.all<QualityRecord[]>(
       `${selectClause}
        FROM quality_records
-       WHERE capture_time BETWEEN ? AND ?
+       ${recordsWhereClause}
        ORDER BY capture_time DESC`,
-      [recordStartTime, recordEndTime]
+      recordsParams
     );
 
     // 4. 在内存中按时间、再按IP进行分组
