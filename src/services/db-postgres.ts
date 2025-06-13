@@ -359,10 +359,55 @@ export async function updateStatusFromPassToIgnored(): Promise<{
 }
 
 export async function updateStatusFromFailToInReview(
-  ...args: any[]
-): Promise<any> {
-  logger.warn("updateStatusFromFailToInReview: " + NOT_IMPLEMENTED_ERROR);
-  return Promise.reject(new Error(NOT_IMPLEMENTED_ERROR));
+  records?: { client_ip: string; timestamp: string }[]
+): Promise<{ updated: number }> {
+  // 全量更新模式
+  if (!records || records.length === 0) {
+    const sql = `UPDATE quality_records SET status = 'INREVIEW' WHERE label = 'fail' AND status IS NULL`;
+    try {
+      const result = await pool.query(sql);
+      const updated = result.rowCount || 0;
+      logger.info(
+        `Updated ${updated} 'fail' records (bulk) to 'INREVIEW' status in PostgreSQL.`
+      );
+      return { updated };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      logger.error(
+        `Failed to bulk update 'fail' records in PostgreSQL: ${errorMessage}`
+      );
+      throw error;
+    }
+  }
+
+  // 精确更新模式
+  let updatedCount = 0;
+  // TODO: Refactor to use a single query or transaction for better performance
+  for (const record of records) {
+    const sql = `UPDATE quality_records SET status = 'INREVIEW' WHERE client_ip = $1 AND timestamp = $2 AND label = 'fail' AND status IS NULL`;
+    try {
+      const result = await pool.query(sql, [
+        record.client_ip,
+        record.timestamp,
+      ]);
+      if (result.rowCount) {
+        updatedCount += result.rowCount;
+      }
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      logger.error(
+        `Failed to update specific record ${record.client_ip}/${record.timestamp} to INREVIEW: ${errorMessage}`
+      );
+      // Decide if we should continue or rethrow the error
+    }
+  }
+
+  logger.info(
+    `Updated ${updatedCount} specific records to 'INREVIEW' status in PostgreSQL.`
+  );
+  return { updated: updatedCount };
 }
 
 export function getDbInstance(...args: any[]): any {
