@@ -10,7 +10,7 @@ export async function initializePostgresDB(): Promise<void> {
     await client.query(`
       CREATE TABLE IF NOT EXISTS measurements (
         id SERIAL PRIMARY KEY,
-        timestamp TEXT NOT NULL,
+        timestamp TIMESTAMPTZ NOT NULL,
         spec_id TEXT,
         spec_name TEXT,
         outer_max REAL,
@@ -26,7 +26,7 @@ export async function initializePostgresDB(): Promise<void> {
         inner_non_circularity REAL,
         is_compliant INTEGER,
         corrected_data JSONB,
-        caculated_data JSONB
+        calculated_data JSONB
       )
     `);
 

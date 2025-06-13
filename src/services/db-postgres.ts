@@ -10,24 +10,204 @@ export type { QualityRecord };
 const NOT_IMPLEMENTED_ERROR =
   "This function is not yet implemented for PostgreSQL.";
 
-export async function saveMeasurement(...args: any[]): Promise<any> {
-  logger.warn("saveMeasurement: " + NOT_IMPLEMENTED_ERROR);
-  return Promise.reject(new Error(NOT_IMPLEMENTED_ERROR));
+export async function saveMeasurement(data: any, specInfo?: any): Promise<any> {
+  const {
+    timestamp,
+    specId,
+    correctedData,
+    caculatedData, // from the flattened object provided by user
+    resultData,
+    isCompliant, // assuming it's pre-calculated and passed in `data`
+  } = data;
+
+  const sql = `
+    INSERT INTO measurements (
+      timestamp, spec_id, spec_name, 
+      outer_max, outer_avg, outer_min, 
+      inner_max, inner_avg, inner_min, 
+      wall_max, wall_avg, wall_min, 
+      outer_non_circularity, inner_non_circularity, 
+      is_compliant, corrected_data, calculated_data
+    ) VALUES (
+      $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17
+    ) RETURNING *;
+  `;
+
+  const values = [
+    timestamp, // Already in ISO format
+    specId,
+    specInfo?.name,
+    resultData?.outerStats?.max,
+    resultData?.outerStats?.avg,
+    resultData?.outerStats?.min,
+    resultData?.innerStats?.max,
+    resultData?.innerStats?.avg,
+    resultData?.innerStats?.min,
+    resultData?.wallStats?.max,
+    resultData?.wallStats?.avg,
+    resultData?.wallStats?.min,
+    resultData?.outerNonCircularity,
+    resultData?.innerNonCircularity,
+    isCompliant,
+    correctedData,
+    caculatedData, // Map incoming `caculatedData` to `calculated_data` column
+  ];
+
+  try {
+    const result = await pool.query(sql, values);
+    logger.debug(
+      `Measurement saved to PostgreSQL with ID: ${result.rows[0].id}`
+    );
+    return result.rows[0];
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`Failed to save measurement to PostgreSQL: ${errorMessage}`, {
+      sql,
+      values: values.map((v) =>
+        JSON.stringify(v)?.length > 200 ? "DATA_TOO_LONG" : v
+      ), // Avoid logging huge data
+    });
+    throw error;
+  }
 }
 
-export async function getMeasurements(...args: any[]): Promise<any> {
-  logger.warn("getMeasurements: " + NOT_IMPLEMENTED_ERROR);
-  return Promise.reject(new Error(NOT_IMPLEMENTED_ERROR));
+export async function getMeasurements(options: {
+  limit?: number;
+  offset?: number;
+  spec_id?: string;
+  spec_name?: string;
+  is_compliant?: string;
+  startTime?: string;
+  endTime?: string;
+  sortBy?: string;
+  sortOrder?: "ASC" | "DESC";
+}): Promise<{
+  data: any[];
+  total: number;
+  page: number;
+  limit: number;
+}> {
+  const {
+    limit = 20,
+    offset = 0,
+    spec_id,
+    spec_name,
+    is_compliant,
+    startTime,
+    endTime,
+    sortBy = "timestamp",
+    sortOrder = "DESC",
+  } = options;
+
+  const validSortBy = [
+    "id",
+    "timestamp",
+    "spec_id",
+    "spec_name",
+    "is_compliant",
+  ];
+  const orderBy = validSortBy.includes(sortBy) ? sortBy : "timestamp";
+  const orderDirection = sortOrder === "ASC" ? "ASC" : "DESC";
+
+  let query = `SELECT * FROM measurements`;
+  let countQuery = `SELECT COUNT(*) as total FROM measurements`;
+  const params: any[] = [];
+  const conditions: string[] = [];
+  let paramIndex = 1;
+
+  if (spec_id) {
+    conditions.push(`spec_id = $${paramIndex++}`);
+    params.push(spec_id);
+  }
+  if (spec_name) {
+    conditions.push(`spec_name LIKE $${paramIndex++}`);
+    params.push(`%${spec_name}%`);
+  }
+  if (is_compliant) {
+    conditions.push(`is_compliant = $${paramIndex++}`);
+    params.push(parseInt(is_compliant, 10));
+  }
+  if (startTime) {
+    conditions.push(`timestamp >= $${paramIndex++}`);
+    params.push(startTime);
+  }
+  if (endTime) {
+    conditions.push(`timestamp <= $${paramIndex++}`);
+    params.push(endTime);
+  }
+
+  if (conditions.length > 0) {
+    const whereClause = ` WHERE ` + conditions.join(" AND ");
+    query += whereClause;
+    countQuery += whereClause;
+  }
+
+  try {
+    const countResult = await pool.query(countQuery, params);
+    const total = parseInt(countResult.rows[0].total, 10);
+
+    query += ` ORDER BY ${orderBy} ${orderDirection} LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
+    params.push(limit, offset);
+
+    const { rows } = await pool.query(query, params);
+
+    return {
+      data: rows,
+      total,
+      page: offset / limit + 1,
+      limit,
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`Failed to get measurements from PostgreSQL: ${errorMessage}`);
+    throw error;
+  }
 }
 
-export async function getRecentMeasurements(...args: any[]): Promise<any[]> {
-  logger.warn("getRecentMeasurements: " + NOT_IMPLEMENTED_ERROR);
-  return Promise.reject(new Error(NOT_IMPLEMENTED_ERROR));
+export async function getRecentMeasurements(
+  hours: number,
+  limit: number,
+  specId?: string
+): Promise<any[]> {
+  const since = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+  let query = `
+    SELECT * FROM measurements 
+    WHERE timestamp >= $1
+  `;
+  const params: any[] = [since];
+
+  if (specId) {
+    query += ` AND spec_id = $2`;
+    params.push(specId);
+  }
+
+  query += ` ORDER BY timestamp DESC LIMIT $${params.length + 1}`;
+  params.push(limit);
+
+  try {
+    const { rows } = await pool.query(query, params);
+    return rows;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(
+      `Failed to get recent measurements from PostgreSQL: ${errorMessage}`
+    );
+    throw error;
+  }
 }
 
-export async function getMeasurementById(...args: any[]): Promise<any> {
-  logger.warn("getMeasurementById: " + NOT_IMPLEMENTED_ERROR);
-  return Promise.reject(new Error(NOT_IMPLEMENTED_ERROR));
+export async function getMeasurementById(id: number): Promise<any> {
+  const sql = "SELECT * FROM measurements WHERE id = $1";
+  try {
+    const { rows } = await pool.query(sql, [id]);
+    return rows[0] || null;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(
+      `Failed to get measurement by ID from PostgreSQL: ${errorMessage}`
+    );
+    throw error;
+  }
 }
 
 export async function getComplianceStats(...args: any[]): Promise<any> {
