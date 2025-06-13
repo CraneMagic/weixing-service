@@ -54,7 +54,7 @@ export async function initializePostgresDB(): Promise<void> {
         message_id TEXT,
         object_key TEXT,
         status TEXT,
-        pcNum TEXT,
+        pc_num TEXT,
         PRIMARY KEY (client_ip, timestamp)
       )
     `);

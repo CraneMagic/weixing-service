@@ -132,7 +132,7 @@ export async function getQualityRecords(options: {
   limit?: number;
   offset?: number;
   client_ip?: string;
-  pcNum?: string;
+  pc_num?: string;
   model_type?: string;
   status?: string;
   label?: string;
@@ -150,7 +150,7 @@ export async function getQualityRecords(options: {
     limit = 20,
     offset = 0,
     client_ip,
-    pcNum,
+    pc_num,
     model_type,
     status,
     label,
@@ -165,7 +165,7 @@ export async function getQualityRecords(options: {
     "timestamp",
     "capture_time",
     "label",
-    "pcNum",
+    "pc_num",
     "confidence",
     "model_type",
     "status",
@@ -184,9 +184,9 @@ export async function getQualityRecords(options: {
     conditions.push(`client_ip = $${paramIndex++}`);
     params.push(client_ip);
   }
-  if (pcNum) {
-    conditions.push(`"pcNum" = $${paramIndex++}`);
-    params.push(pcNum);
+  if (pc_num) {
+    conditions.push(`pc_num = $${paramIndex++}`);
+    params.push(pc_num);
   }
   if (model_type) {
     conditions.push(`model_type = $${paramIndex++}`);
@@ -259,9 +259,21 @@ export async function getQualityRecordsGroupedBySecondAndIp(
   return Promise.reject(new Error(NOT_IMPLEMENTED_ERROR));
 }
 
-export async function getQualityRecord(...args: any[]): Promise<any> {
-  logger.warn("getQualityRecord: " + NOT_IMPLEMENTED_ERROR);
-  return Promise.reject(new Error(NOT_IMPLEMENTED_ERROR));
+export async function getQualityRecord(
+  client_ip: string,
+  timestamp: string
+): Promise<QualityRecord | null> {
+  const sql = `SELECT * FROM quality_records WHERE client_ip = $1 AND timestamp = $2`;
+  try {
+    const { rows } = await pool.query(sql, [client_ip, timestamp]);
+    return rows[0] || null;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(
+      `Failed to get quality record by ID from PostgreSQL: ${errorMessage}`
+    );
+    throw error;
+  }
 }
 
 export async function updateQualityRecord(
@@ -304,16 +316,46 @@ export async function updateQualityRecord(
   }
 }
 
-export async function deleteQualityRecord(...args: any[]): Promise<any> {
-  logger.warn("deleteQualityRecord: " + NOT_IMPLEMENTED_ERROR);
-  return Promise.reject(new Error(NOT_IMPLEMENTED_ERROR));
+export async function deleteQualityRecord(
+  client_ip: string,
+  timestamp: string
+): Promise<{ deleted: number }> {
+  const sql = `DELETE FROM quality_records WHERE client_ip = $1 AND timestamp = $2`;
+  try {
+    const result = await pool.query(sql, [client_ip, timestamp]);
+    if (result.rowCount && result.rowCount > 0) {
+      logger.debug(
+        `Quality record deleted in PostgreSQL, client_ip: ${client_ip}, timestamp: ${timestamp}`
+      );
+    }
+    return { deleted: result.rowCount || 0 };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(
+      `Failed to delete quality record in PostgreSQL: ${errorMessage}`
+    );
+    throw error;
+  }
 }
 
-export async function updateStatusFromPassToIgnored(
-  ...args: any[]
-): Promise<any> {
-  logger.warn("updateStatusFromPassToIgnored: " + NOT_IMPLEMENTED_ERROR);
-  return Promise.reject(new Error(NOT_IMPLEMENTED_ERROR));
+export async function updateStatusFromPassToIgnored(): Promise<{
+  updated: number;
+}> {
+  const sql = `UPDATE quality_records SET status = 'IGNORED' WHERE label = 'pass' AND (status IS NULL OR status != 'IGNORED')`;
+  try {
+    const result = await pool.query(sql);
+    const updated = result.rowCount || 0;
+    logger.info(
+      `Updated ${updated} 'pass' records to 'IGNORED' status in PostgreSQL.`
+    );
+    return { updated };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(
+      `Failed to bulk update 'pass' records in PostgreSQL: ${errorMessage}`
+    );
+    throw error;
+  }
 }
 
 export async function updateStatusFromFailToInReview(

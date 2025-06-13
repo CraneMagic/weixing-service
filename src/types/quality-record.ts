@@ -20,5 +20,5 @@ export interface QualityRecord {
   message_id?: string;
   object_key?: string;
   status?: string;
-  pcNum?: string;
+  pc_num?: string;
 }
