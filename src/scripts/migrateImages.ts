@@ -1,9 +1,9 @@
 import {
-  initializeSQLiteDB,
-  closeSQLiteDB,
   getQualityRecords,
   updateQualityRecord,
-} from "../services/db-sqlite";
+} from "../services/db-postgres";
+import { initializePostgresDB } from "../services/db-setup-postgres";
+import pool from "../services/pg-pool"; // Import the pool
 import { saveImageFromBase64 } from "../utils/imageStore";
 import { logger } from "../utils/logger";
 
@@ -13,7 +13,7 @@ export async function runImageMigration(): Promise<{
   failed: number;
 }> {
   logger.info("开始迁移数据库中的图片数据...");
-  await initializeSQLiteDB();
+  await initializePostgresDB();
 
   let migratedCount = 0;
   let failedCount = 0;
@@ -58,7 +58,7 @@ export async function runImageMigration(): Promise<{
     logger.error(`迁移过程中发生错误: ${errorMessage}`);
     throw error; // 向上抛出错误，让控制器处理
   } finally {
-    await closeSQLiteDB();
+    await pool.end(); // End the pool connection
     logger.info("图片迁移任务完成，数据库连接已关闭。");
   }
 

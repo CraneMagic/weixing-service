@@ -10,7 +10,7 @@ import {
   getQualityRecordsGroupedBySecondAndIp,
   updateStatusFromPassToIgnored as updatePassService,
   updateStatusFromFailToInReview as updateFailService,
-} from "../services/db-sqlite";
+} from "../services/db-postgres";
 import { getImagePath } from "../utils/imageStore";
 
 /**

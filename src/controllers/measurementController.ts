@@ -9,7 +9,7 @@ import {
   getTrendData,
   cleanupOldData,
   optimizeDatabase,
-} from "../services/db-sqlite";
+} from "../services/db-postgres";
 import { getParameter } from "../services/db";
 import { logger } from "../utils/logger";
 
