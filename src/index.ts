@@ -13,6 +13,7 @@ import { initializeDatabase } from "./services/db";
 import { setupCleanupJob } from "./services/cleanup";
 import { initializeScheduler } from "./services/scheduler";
 import { initializePostgresDB } from "./services/db-setup-postgres";
+import { startSchedulers } from "./scheduler";
 
 // 加载环境变量
 dotenv.config();
@@ -36,6 +37,9 @@ initializeDatabase();
 
     // 初始化定时维护任务
     initializeScheduler();
+
+    // 启动图片自动清理等定时任务
+    startSchedulers();
   } catch (error) {
     logger.error(
       `数据库初始化失败: ${

@@ -105,8 +105,19 @@ export async function getMeasurements(options: {
     "spec_id",
     "spec_name",
     "is_compliant",
+    "outer_max",
+    "outer_avg",
+    "outer_min",
+    "inner_max",
+    "inner_avg",
+    "inner_min",
+    "wall_max",
+    "wall_avg",
+    "wall_min",
+    "outer_non_circularity",
+    "inner_non_circularity",
   ];
-  const orderBy = validSortBy.includes(sortBy) ? sortBy : "timestamp";
+  const orderBy = validSortBy.includes(sortBy) ? `"${sortBy}"` : "timestamp";
   const orderDirection = sortOrder === "ASC" ? "ASC" : "DESC";
 
   let query = `SELECT * FROM measurements`;
@@ -360,36 +371,32 @@ export async function getQualityRecords(options: {
   const conditions: string[] = [];
   let paramIndex = 1;
 
-  if (client_ip) {
+  if (client_ip && client_ip.trim() !== "") {
     conditions.push(`client_ip = $${paramIndex++}`);
     params.push(client_ip);
   }
-  if (pc_num) {
+  if (pc_num && pc_num.trim() !== "") {
     conditions.push(`pc_num = $${paramIndex++}`);
     params.push(pc_num);
   }
-  if (model_type) {
+  if (model_type && model_type.trim() !== "") {
     conditions.push(`model_type = $${paramIndex++}`);
     params.push(model_type);
   }
-  if (status !== undefined) {
-    if (status.toLowerCase() === "null") {
-      conditions.push(`status IS NULL`);
-    } else {
-      conditions.push(`status = $${paramIndex++}`);
-      params.push(status);
-    }
+  if (status && status.trim() !== "") {
+    conditions.push(`status = $${paramIndex++}`);
+    params.push(status);
   }
-  if (label) {
-    conditions.push(`label LIKE $${paramIndex++}`);
-    params.push(`%${label}%`);
+  if (label && label.trim() !== "") {
+    conditions.push(`label = $${paramIndex++}`);
+    params.push(label);
   }
   if (startTime) {
-    conditions.push(`capture_time >= $${paramIndex++}`);
+    conditions.push(`"timestamp" >= $${paramIndex++}`);
     params.push(startTime);
   }
   if (endTime) {
-    conditions.push(`capture_time <= $${paramIndex++}`);
+    conditions.push(`"timestamp" <= $${paramIndex++}`);
     params.push(endTime);
   }
 
@@ -423,20 +430,152 @@ export async function getQualityRecords(options: {
   }
 }
 
-export async function getQualityRecordsGroupedBySecond(
-  ...args: any[]
-): Promise<any> {
-  logger.warn("getQualityRecordsGroupedBySecond: " + NOT_IMPLEMENTED_ERROR);
-  return Promise.reject(new Error(NOT_IMPLEMENTED_ERROR));
+export async function getQualityRecordsGroupedBySecond(options: {
+  limit?: number;
+  offset?: number;
+  startTime?: string;
+  endTime?: string;
+}): Promise<any> {
+  const { startTime, endTime, limit = 60, offset = 0 } = options;
+
+  let query = `
+    SELECT
+      SUBSTRING(timestamp, 1, 14) as time_group,
+      json_agg(row_to_json(t)) as records
+    FROM quality_records t
+  `;
+
+  const params: any[] = [];
+  const conditions: string[] = [];
+  let paramIndex = 1;
+
+  if (startTime) {
+    conditions.push(`timestamp >= $${paramIndex++}`);
+    params.push(startTime);
+  }
+  if (endTime) {
+    conditions.push(`timestamp <= $${paramIndex++}`);
+    params.push(endTime);
+  }
+
+  if (conditions.length > 0) {
+    query += ` WHERE ` + conditions.join(" AND ");
+  }
+
+  query += `
+    GROUP BY time_group
+    ORDER BY time_group DESC
+    LIMIT $${paramIndex++} OFFSET $${paramIndex++}
+  `;
+  params.push(limit, offset);
+
+  // Separate count query for total groups
+  let countQuery = `SELECT COUNT(DISTINCT SUBSTRING(timestamp, 1, 14)) FROM quality_records`;
+  const countParams = [];
+  if (conditions.length > 0) {
+    countQuery += ` WHERE ` + conditions.join(" AND ");
+    if (startTime) countParams.push(startTime);
+    if (endTime) countParams.push(endTime);
+  }
+
+  try {
+    const [{ rows }, { rows: countRows }] = await Promise.all([
+      pool.query(query, params),
+      pool.query(countQuery, countParams),
+    ]);
+
+    const data = rows.reduce((acc, row) => {
+      acc[row.time_group] = row.records;
+      return acc;
+    }, {});
+
+    const total = countRows.length > 0 ? parseInt(countRows[0].count, 10) : 0;
+
+    return {
+      data,
+      total,
+      page: offset / limit + 1,
+      limit,
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(
+      `Failed to get quality records grouped by second: ${errorMessage}`
+    );
+    throw error;
+  }
 }
 
-export async function getQualityRecordsGroupedBySecondAndIp(
-  ...args: any[]
-): Promise<any> {
-  logger.warn(
-    "getQualityRecordsGroupedBySecondAndIp: " + NOT_IMPLEMENTED_ERROR
-  );
-  return Promise.reject(new Error(NOT_IMPLEMENTED_ERROR));
+export async function getQualityRecordsGroupedBySecondAndIp(options: {
+  limit?: number;
+  offset?: number;
+  startTime?: string;
+  endTime?: string;
+}): Promise<any> {
+  const { startTime, endTime, limit = 60, offset = 0 } = options;
+
+  let query = `
+    SELECT
+      SUBSTRING(timestamp, 1, 14) as time_group,
+      client_ip,
+      json_agg(row_to_json(t)) as records
+    FROM quality_records t
+  `;
+
+  const params: any[] = [];
+  const conditions: string[] = [];
+  if (startTime) {
+    conditions.push(`timestamp >= $${params.length + 1}`);
+    params.push(startTime);
+  }
+  if (endTime) {
+    conditions.push(`timestamp <= $${params.length + 1}`);
+    params.push(endTime);
+  }
+
+  if (conditions.length > 0) {
+    query += ` WHERE ` + conditions.join(" AND ");
+  }
+
+  query += `
+    GROUP BY time_group, client_ip
+    ORDER BY time_group DESC, client_ip
+  `;
+
+  try {
+    const { rows } = await pool.query(query, params);
+
+    const data = rows.reduce((acc, row) => {
+      const { time_group, client_ip, records } = row;
+      if (!acc[time_group]) {
+        acc[time_group] = {};
+      }
+      acc[time_group][client_ip] = records;
+      return acc;
+    }, {});
+
+    const total = Object.keys(data).length;
+
+    // Manually slice the object for pagination
+    const paginatedKeys = Object.keys(data).slice(offset, offset + limit);
+    const paginatedData = paginatedKeys.reduce((acc, key) => {
+      acc[key] = data[key];
+      return acc;
+    }, {} as any);
+
+    return {
+      data: paginatedData,
+      total,
+      page: offset / limit + 1,
+      limit,
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(
+      `Failed to get records grouped by second and IP: ${errorMessage}`
+    );
+    throw error;
+  }
 }
 
 export async function getQualityRecord(
@@ -590,9 +729,56 @@ export async function updateStatusFromFailToInReview(
   return { updated: updatedCount };
 }
 
-export function getDbInstance(...args: any[]): any {
-  logger.warn(
-    "getDbInstance is not applicable for PostgreSQL, returning pool."
+/**
+ * 根据保留策略，获取需要被清理的图片文件名
+ * - 'fail' 标签的图片保留7天
+ * - 其他所有标签 (包括 'pass' 和 null) 的图片保留1天
+ * @returns 需要被删除的文件名列表
+ */
+export async function getFilenamesToClean(): Promise<string[]> {
+  const failRetentionHours = parseInt(
+    process.env.FAIL_RETENTION_HOURS || (24 * 7).toString(),
+    10
   );
-  return pool;
+  const defaultRetentionHours = parseInt(
+    process.env.DEFAULT_RETENTION_HOURS || "24",
+    10
+  );
+
+  const failCutoffDate = new Date(
+    Date.now() - failRetentionHours * 60 * 60 * 1000
+  ).toISOString();
+  const defaultCutoffDate = new Date(
+    Date.now() - defaultRetentionHours * 60 * 60 * 1000
+  ).toISOString();
+
+  const query = `
+    SELECT filename FROM quality_records
+    WHERE 
+      (
+        (label = $1 AND "timestamp" < $2) 
+        OR 
+        ((label != $1 OR label IS NULL) AND "timestamp" < $3)
+      )
+      AND filename IS NOT NULL AND filename != ''
+  `;
+
+  const params: any[] = ["fail", failCutoffDate, defaultCutoffDate];
+
+  try {
+    const { rows } = await pool.query(query, params);
+    return rows.map((row) => row.filename);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`从PostgreSQL获取待清理文件名失败: ${errorMessage}`, {
+      query: query,
+      params: params,
+    });
+    throw error;
+  }
+}
+
+export function getDbInstance(...args: any[]): any {
+  logger.warn("getDbInstance: " + NOT_IMPLEMENTED_ERROR);
+  return null;
 }

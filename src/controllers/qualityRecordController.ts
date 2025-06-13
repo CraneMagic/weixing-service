@@ -100,23 +100,17 @@ export async function getQualityRecordsStatsBySecond(
   res: Response
 ) {
   try {
-    const { limit = 100, page = 1, include_image = "false" } = req.query;
+    const { limit = 60, page = 1 } = req.query;
 
     const options = {
       limit: parseInt(limit as string, 10),
       offset:
         (parseInt(page as string, 10) - 1) * parseInt(limit as string, 10),
-      include_image: ["true", "1"].includes(
-        (include_image as string).toLowerCase()
-      ),
     };
 
     const result = await getQualityRecordsGroupedBySecond(options);
 
-    return res.status(200).json({
-      success: true,
-      ...result,
-    });
+    return res.status(200).json(result);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     logger.error(`获取记录统计失败: ${errorMessage}`);
@@ -224,51 +218,25 @@ export async function getQualityRecordsStatsBySecondAndIp(
 ) {
   try {
     const {
-      limit = 100,
+      limit = 60,
       page = 1,
-      include_image = "false",
       startTime: startTimeStr,
       endTime: endTimeStr,
-      label,
-      status,
     } = req.query;
-
-    const endTime = endTimeStr ? new Date(endTimeStr as string) : new Date();
-    const startTime = startTimeStr
-      ? new Date(startTimeStr as string)
-      : new Date(endTime.getTime() - 1 * 60 * 60 * 1000); // 默认查询1小时
-
-    // 增加查询范围限制，防止内存溢出
-    const MAX_RANGE_MS = 30 * 24 * 60 * 60 * 1000; // 30天
-    if (endTime.getTime() - startTime.getTime() > MAX_RANGE_MS) {
-      return res.status(400).json({
-        success: false,
-        message: "查询时间范围不能超过30天",
-      });
-    }
 
     const options = {
       limit: parseInt(limit as string, 10),
       offset:
         (parseInt(page as string, 10) - 1) * parseInt(limit as string, 10),
-      include_image: ["true", "1"].includes(
-        (include_image as string).toLowerCase()
-      ),
-      startTime: startTime.toISOString(),
-      endTime: endTime.toISOString(),
-      label: label as string | undefined,
-      status: status as string | undefined,
+      startTime: startTimeStr as string | undefined,
+      endTime: endTimeStr as string | undefined,
     };
 
     const result = await getQualityRecordsGroupedBySecondAndIp(options);
-
-    return res.status(200).json({
-      success: true,
-      ...result,
-    });
+    return res.status(200).json(result);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    logger.error(`获取记录统计失败: ${errorMessage}`);
+    logger.error(`按秒和IP获取记录失败: ${errorMessage}`);
     return res.status(500).json({
       success: false,
       message: `获取失败: ${errorMessage}`,
