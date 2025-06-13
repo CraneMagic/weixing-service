@@ -1,6 +1,8 @@
 import pool from "./pg-pool";
 import { logger } from "../utils/logger";
 import type { QualityRecord } from "../types/quality-record";
+import { convertTimestampToISO } from "../utils/time";
+import { saveImageFromBase64 } from "../utils/imageStore";
 
 // Using `import type` and re-exporting for consumers of this module
 export type { QualityRecord };
@@ -58,9 +60,72 @@ export async function vacuumDatabase(...args: any[]): Promise<boolean> {
   return Promise.reject(new Error(NOT_IMPLEMENTED_ERROR));
 }
 
-export async function saveQualityRecord(...args: any[]): Promise<any> {
-  logger.warn("saveQualityRecord: " + NOT_IMPLEMENTED_ERROR);
-  return Promise.reject(new Error(NOT_IMPLEMENTED_ERROR));
+export async function closeSQLiteDB(): Promise<void> {
+  logger.warn(
+    "closeSQLiteDB is not applicable to PostgreSQL connection pool and is a no-op."
+  );
+  return Promise.resolve();
+}
+
+export async function saveQualityRecord(
+  data: QualityRecord
+): Promise<QualityRecord> {
+  // 1. Handle timestamp conversion
+  if (data.timestamp && !data.capture_time) {
+    const isoTime = convertTimestampToISO(data.timestamp);
+    data.capture_time = isoTime === null ? undefined : isoTime;
+  }
+
+  // 2. Set status based on label
+  if (data.label === "pass") {
+    data.status = "IGNORED";
+  } else if (data.label === "fail") {
+    data.status = undefined; // In PostgreSQL this will be NULL
+  }
+
+  // 3. Save image and update object_key
+  if (data.image) {
+    const filename = `${data.client_ip}_${data.timestamp}`;
+    const savedFilename = saveImageFromBase64(data.image, filename);
+    if (savedFilename) {
+      data.object_key = savedFilename;
+    }
+    delete data.image; // Ensure base64 is not stored in DB
+  }
+
+  const columns = Object.keys(data).filter(
+    (k) => (data as any)[k] !== undefined
+  );
+  const values = columns.map((k) => (data as any)[k]);
+  const placeholders = columns.map((_, i) => `$${i + 1}`).join(", ");
+
+  const updateColumns = columns
+    .filter((col) => col !== "client_ip" && col !== "timestamp")
+    .map((col) => `"${col}" = EXCLUDED."${col}"`)
+    .join(", ");
+
+  const sql = `
+    INSERT INTO quality_records (${columns.map((c) => `"${c}"`).join(", ")})
+    VALUES (${placeholders})
+    ON CONFLICT (client_ip, timestamp)
+    DO UPDATE SET ${updateColumns}
+    RETURNING *
+  `;
+
+  try {
+    const result = await pool.query(sql, values);
+    logger.debug(
+      `Record saved or updated in PostgreSQL: ${data.client_ip} - ${data.timestamp}`
+    );
+    return result.rows[0];
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(
+      `Failed to save or update record in PostgreSQL: ${errorMessage}`,
+      { sql, values }
+    );
+    throw error;
+  }
 }
 
 export async function getQualityRecords(options: {
