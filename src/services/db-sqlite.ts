@@ -54,6 +54,10 @@ export async function initializeSQLiteDB(): Promise<void> {
       driver: sqlite3.Database,
     });
 
+    // 开启 WAL (Write-Ahead Logging) 模式以提升并发性能
+    await db.exec("PRAGMA journal_mode = WAL;");
+    await db.exec("PRAGMA synchronous = NORMAL;");
+
     // 创建测量数据表
     await db.exec(`
       CREATE TABLE IF NOT EXISTS measurements (

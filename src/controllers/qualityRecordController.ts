@@ -26,6 +26,14 @@ export async function createQualityRecord(req: Request, res: Response) {
       });
     }
 
+    // 临时性能优化：只保存 label 为 "fail" 的记录
+    if (data.label !== "fail") {
+      return res.status(200).json({
+        success: true,
+        message: `非 "fail" 记录已跳过保存 (label: ${data.label})`,
+      });
+    }
+
     const result = await saveQualityRecord(data);
 
     return res.status(201).json({
