@@ -13,6 +13,7 @@ import { initializeDatabase } from "./services/db";
 import { initializeSQLiteDB } from "./services/db-sqlite";
 import { setupCleanupJob } from "./services/cleanup";
 import { initializeScheduler } from "./services/scheduler";
+import { initializePostgresDB } from "./services/db-setup-postgres";
 
 // 加载环境变量
 dotenv.config();
@@ -24,6 +25,7 @@ initializeDatabase();
 (async () => {
   try {
     await initializeSQLiteDB();
+    await initializePostgresDB();
 
     // 启动定时清理任务
     // 默认每7天清理一次，保留90天数据
