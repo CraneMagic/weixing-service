@@ -1,4 +1,4 @@
-import { cleanupOldData, optimizeDatabase } from "./db-sqlite";
+import { cleanupOldData, optimizeDatabase } from "./db-postgres";
 import { logger } from "../utils/logger";
 
 /**

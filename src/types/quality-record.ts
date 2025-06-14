@@ -1,0 +1,24 @@
+export interface QualityRecord {
+  client_ip: string;
+  timestamp: string;
+  capture_time?: string;
+  model_type?: string;
+  label?: string;
+  confidence?: number;
+  frame_id?: number;
+  fis?: number;
+  fps?: number;
+  filename?: string;
+  resolution?: string;
+  size_bytes?: number;
+  size_formatted?: string;
+  jpeg_quality?: number;
+  inference_time_ms?: number;
+  capture_time_ms?: number;
+  jpeg_encode_time_ms?: number;
+  image?: string | null;
+  message_id?: string;
+  object_key?: string;
+  status?: string;
+  pc_num?: string;
+}

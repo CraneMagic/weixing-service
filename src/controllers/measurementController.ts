@@ -9,7 +9,7 @@ import {
   getTrendData,
   cleanupOldData,
   optimizeDatabase,
-} from "../services/db-sqlite";
+} from "../services/db-postgres";
 import { getParameter } from "../services/db";
 import { logger } from "../utils/logger";
 
@@ -81,6 +81,83 @@ export async function createMeasurement(req: Request, res: Response) {
   }
 }
 
+function transformMeasurement(record: any) {
+  if (!record) {
+    return null;
+  }
+
+  const {
+    id,
+    timestamp,
+    spec_id,
+    corrected_data,
+    calculated_data,
+    outer_max,
+    outer_avg,
+    outer_min,
+    inner_max,
+    inner_avg,
+    inner_min,
+    wall_max,
+    wall_avg,
+    wall_min,
+    outer_non_circularity,
+    inner_non_circularity,
+  } = record;
+
+  return {
+    id: String(id),
+    timestamp,
+    specId: spec_id,
+    correctedData: corrected_data || {
+      outerAdjusted: [],
+      innerAdjusted: [],
+    },
+    caculatedData: calculated_data || {
+      outer_diameters: [],
+      inner_diameters: [],
+      wall_thicknesses: [],
+      center: [0, 0],
+    },
+    stats: {
+      outer: {
+        max: outer_max,
+        avg: outer_avg,
+        min: outer_min,
+      },
+      inner: {
+        max: inner_max,
+        avg: inner_avg,
+        min: inner_min,
+      },
+      wall: {
+        max: wall_max,
+        avg: wall_avg,
+        min: wall_min,
+      },
+    },
+    resultData: {
+      outerStats: {
+        max: outer_max,
+        avg: outer_avg,
+        min: outer_min,
+      },
+      innerStats: {
+        max: inner_max,
+        avg: inner_avg,
+        min: inner_min,
+      },
+      wallStats: {
+        max: wall_max,
+        avg: wall_avg,
+        min: wall_min,
+      },
+      outerNonCircularity: outer_non_circularity,
+      innerNonCircularity: inner_non_circularity,
+    },
+  };
+}
+
 export async function getMeasurements(req: Request, res: Response) {
   try {
     const {
@@ -109,10 +186,12 @@ export async function getMeasurements(req: Request, res: Response) {
     };
 
     const result = await getMeasurementsFromDb(options);
+    const transformedData = result.data.map(transformMeasurement);
 
     return res.status(200).json({
       success: true,
       ...result,
+      data: transformedData,
     });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -134,10 +213,11 @@ export async function getRecentData(req: Request, res: Response) {
     const specId = req.query.specId as string;
 
     const data = await getRecentMeasurements(hours, limit, specId);
+    const transformedData = data.map(transformMeasurement);
 
     return res.status(200).json({
       success: true,
-      data,
+      data: transformedData,
     });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -165,8 +245,9 @@ export async function getMeasurement(req: Request, res: Response) {
     }
 
     const data = await getMeasurementById(id);
+    const transformedData = transformMeasurement(data);
 
-    if (!data) {
+    if (!transformedData) {
       return res.status(404).json({
         success: false,
         message: "未找到测量数据",
@@ -175,7 +256,7 @@ export async function getMeasurement(req: Request, res: Response) {
 
     return res.status(200).json({
       success: true,
-      data,
+      data: transformedData,
     });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);

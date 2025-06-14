@@ -10,20 +10,21 @@ import measurementRoutes from "./routes/measurementRoutes";
 import qualityRecordRoutes from "./routes/qualityRecordRoutes";
 import { logger } from "./utils/logger";
 import { initializeDatabase } from "./services/db";
-import { initializeSQLiteDB } from "./services/db-sqlite";
 import { setupCleanupJob } from "./services/cleanup";
 import { initializeScheduler } from "./services/scheduler";
+import { initializePostgresDB } from "./services/db-setup-postgres";
+import { startSchedulers } from "./scheduler";
 
 // 加载环境变量
 dotenv.config();
 
-// 初始化数据库
+// 初始化NeDB数据库
 initializeDatabase();
 
-// 初始化SQLite数据库
+// 初始化PostgreSQL数据库
 (async () => {
   try {
-    await initializeSQLiteDB();
+    await initializePostgresDB();
 
     // 启动定时清理任务
     // 默认每7天清理一次，保留90天数据
@@ -36,9 +37,12 @@ initializeDatabase();
 
     // 初始化定时维护任务
     initializeScheduler();
+
+    // 启动图片自动清理等定时任务
+    startSchedulers();
   } catch (error) {
     logger.error(
-      `SQLite数据库初始化失败: ${
+      `数据库初始化失败: ${
         error instanceof Error ? error.message : String(error)
       }`
     );
