@@ -383,13 +383,21 @@ export async function getQualityRecords(options: {
     conditions.push(`model_type = $${paramIndex++}`);
     params.push(model_type);
   }
-  if (status && status.trim() !== "") {
-    conditions.push(`status = $${paramIndex++}`);
-    params.push(status);
+  if (status !== undefined && status.trim() !== "") {
+    if (status.toLowerCase() === "null") {
+      conditions.push(`status IS NULL`);
+    } else {
+      conditions.push(`status = $${paramIndex++}`);
+      params.push(status);
+    }
   }
-  if (label && label.trim() !== "") {
-    conditions.push(`label = $${paramIndex++}`);
-    params.push(label);
+  if (label !== undefined && label.trim() !== "") {
+    if (label.toLowerCase() === "null") {
+      conditions.push(`label IS NULL`);
+    } else {
+      conditions.push(`label = $${paramIndex++}`);
+      params.push(label);
+    }
   }
   if (startTime) {
     conditions.push(`"timestamp" >= $${paramIndex++}`);
