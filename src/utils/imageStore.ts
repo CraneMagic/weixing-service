@@ -65,3 +65,46 @@ export function getImagePath(filename: string): string | null {
 
   return null;
 }
+
+/**
+ * 统一的图像保存函数，支持 Buffer 和 Base64 字符串
+ * @param imageData 图像数据 (Buffer 或 Base64 字符串)
+ * @param clientIp 客户端IP
+ * @param timestamp 时间戳
+ * @returns 保存的文件名 (带扩展名)，失败时返回null
+ */
+export function saveImage(
+  imageData: string | Buffer | null,
+  clientIp: string,
+  timestamp: string
+): string | null {
+  if (!imageData) return null;
+
+  ensureImageDirExists();
+
+  try {
+    const filename = `${clientIp}_${timestamp}`;
+    const imagePath = path.join(imageDir, `${filename}.jpg`);
+
+    if (Buffer.isBuffer(imageData)) {
+      // 直接保存 Buffer 数据
+      fs.writeFileSync(imagePath, imageData);
+      logger.debug(`图片已保存 (Buffer): ${imagePath}`);
+    } else if (typeof imageData === "string") {
+      // 处理 Base64 字符串
+      const base64Data = imageData.replace(/^data:image\/\w+;base64,/, "");
+      const buffer = Buffer.from(base64Data, "base64");
+      fs.writeFileSync(imagePath, buffer);
+      logger.debug(`图片已保存 (Base64): ${imagePath}`);
+    } else {
+      logger.error(`不支持的图像数据类型: ${typeof imageData}`);
+      return null;
+    }
+
+    return `${filename}.jpg`;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`保存图片失败: ${errorMessage}`);
+    return null;
+  }
+}

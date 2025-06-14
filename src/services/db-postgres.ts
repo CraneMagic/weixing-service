@@ -2,7 +2,7 @@ import pool from "./pg-pool";
 import { logger } from "../utils/logger";
 import type { QualityRecord } from "../types/quality-record";
 import { convertTimestampToISO } from "../utils/time";
-import { saveImageFromBase64 } from "../utils/imageStore";
+import { saveImage, saveImageFromBase64 } from "../utils/imageStore";
 
 // Using `import type` and re-exporting for consumers of this module
 export type { QualityRecord };
@@ -276,12 +276,11 @@ export async function saveQualityRecord(
 
   // 3. Save image and update object_key
   if (data.image) {
-    const filename = `${data.client_ip}_${data.timestamp}`;
-    const savedFilename = saveImageFromBase64(data.image, filename);
+    const savedFilename = saveImage(data.image, data.client_ip, data.timestamp);
     if (savedFilename) {
       data.object_key = savedFilename;
     }
-    delete data.image; // Ensure base64 is not stored in DB
+    delete data.image; // Ensure img data is not stored in DB
   }
 
   const columns = Object.keys(data).filter(
@@ -492,7 +491,7 @@ export async function getQualityRecordsGroupedBySecond(options: {
       pool.query(countQuery, countParams),
     ]);
 
-    const data = rows.reduce((acc, row) => {
+    const data = rows.reduce((acc: any, row: any) => {
       acc[row.time_group] = row.records;
       return acc;
     }, {});
@@ -553,7 +552,7 @@ export async function getQualityRecordsGroupedBySecondAndIp(options: {
   try {
     const { rows } = await pool.query(query, params);
 
-    const data = rows.reduce((acc, row) => {
+    const data = rows.reduce((acc: any, row: any) => {
       const { time_group, client_ip, records } = row;
       if (!acc[time_group]) {
         acc[time_group] = {};
@@ -775,7 +774,7 @@ export async function getFilenamesToClean(): Promise<string[]> {
 
   try {
     const { rows } = await pool.query(query, params);
-    return rows.map((row) => row.filename);
+    return rows.map((row: any) => row.filename);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     logger.error(`从PostgreSQL获取待清理文件名失败: ${errorMessage}`, {
