@@ -15,6 +15,7 @@ import {
   checkAndAutoClean,
   triggerRegularCleanup,
 } from "../controllers/qualityRecordController";
+import { Request, Response } from "express";
 
 const router = Router();
 
@@ -57,5 +58,34 @@ router.put("/:client_ip/:timestamp", updateQualityRecord);
 
 // 删除质量检测记录
 router.delete("/:client_ip/:timestamp", deleteQualityRecord);
+
+// 添加连接池状态监控端点
+router.get("/pool-status", async (req: Request, res: Response) => {
+  try {
+    const { checkPoolHealth } = await import("../services/pg-pool");
+    const poolHealth = await checkPoolHealth();
+
+    res.status(200).json({
+      success: true,
+      data: {
+        healthy: poolHealth.healthy,
+        connections: {
+          total: poolHealth.totalConnections,
+          idle: poolHealth.idleConnections,
+          waiting: poolHealth.waitingClients,
+          active: poolHealth.totalConnections - poolHealth.idleConnections,
+        },
+        error: poolHealth.error,
+        timestamp: new Date().toISOString(),
+      },
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    res.status(500).json({
+      success: false,
+      message: `获取连接池状态失败: ${errorMessage}`,
+    });
+  }
+});
 
 export default router;

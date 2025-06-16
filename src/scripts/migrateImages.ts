@@ -7,7 +7,9 @@ import pool from "../services/pg-pool"; // Import the pool
 import { saveImageFromBase64 } from "../utils/imageStore";
 import { logger } from "../utils/logger";
 
-export async function runImageMigration(): Promise<{
+export async function runImageMigration(
+  shouldClosePool: boolean = false
+): Promise<{
   total: number;
   migrated: number;
   failed: number;
@@ -62,8 +64,13 @@ export async function runImageMigration(): Promise<{
     logger.error(`迁移过程中发生错误: ${errorMessage}`);
     throw error; // 向上抛出错误，让控制器处理
   } finally {
-    await pool.end(); // End the pool connection
-    logger.info("图片迁移任务完成，数据库连接已关闭。");
+    if (shouldClosePool) {
+      // 只有在显式要求时才关闭连接池（例如独立运行脚本时）
+      await pool.end();
+      logger.info("图片迁移任务完成，数据库连接池已关闭。");
+    } else {
+      logger.info("图片迁移任务完成。");
+    }
   }
 
   return { total: totalCount, migrated: migratedCount, failed: failedCount };
@@ -74,5 +81,12 @@ async function getRecordsToMigrate() {
   return allRecords.data.filter((r) => r.image);
 }
 
-// 移除自执行部分
-// migrateImages();
+// 如果需要独立运行此脚本，可以取消下面的注释
+// (async () => {
+//   try {
+//     await runImageMigration(true); // 独立运行时，传入true来关闭连接池
+//   } catch (err) {
+//     logger.error("运行图片迁移脚本时捕获到未处理的错误: ", err);
+//     process.exit(1);
+//   }
+// })();

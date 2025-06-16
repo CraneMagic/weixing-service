@@ -25,7 +25,7 @@ export function initializeScheduler(): void {
     if (taskRunner.lock()) {
       try {
         logger.info("开始执行图片迁移任务。");
-        const result = await runImageMigration();
+        const result = await runImageMigration(false); // 不关闭连接池，因为是在主应用中运行
         logger.info(
           `图片迁移任务执行完毕。共处理 ${result.total} 条记录，成功 ${result.migrated} 条，失败 ${result.failed} 条。`
         );
@@ -55,7 +55,7 @@ export function initializeScheduler(): void {
     if (taskRunner.lock()) {
       try {
         logger.info("开始执行数据库VACUUM任务。");
-        await runVacuum();
+        await runVacuum(false); // 不关闭连接池，因为是在主应用中运行
         logger.info("数据库VACUUM任务执行完毕。");
       } catch (error) {
         const errorMessage =

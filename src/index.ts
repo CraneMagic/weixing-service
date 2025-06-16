@@ -64,12 +64,34 @@ async function startApplication() {
     app.use("/api/quality-records", qualityRecordRoutes);
 
     // 健康检查路由
-    app.get("/health", (req, res) => {
-      res.status(200).json({
-        status: "ok",
-        timestamp: new Date().toISOString(),
-        database: "connected",
-      });
+    app.get("/health", async (req, res) => {
+      try {
+        const { checkPoolHealth } = await import("./services/pg-pool");
+        const poolHealth = await checkPoolHealth();
+
+        res.status(poolHealth.healthy ? 200 : 503).json({
+          status: poolHealth.healthy ? "ok" : "degraded",
+          timestamp: new Date().toISOString(),
+          database: {
+            healthy: poolHealth.healthy,
+            totalConnections: poolHealth.totalConnections,
+            idleConnections: poolHealth.idleConnections,
+            waitingClients: poolHealth.waitingClients,
+            error: poolHealth.error,
+          },
+        });
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        res.status(503).json({
+          status: "error",
+          timestamp: new Date().toISOString(),
+          database: {
+            healthy: false,
+            error: errorMessage,
+          },
+        });
+      }
     });
 
     // 错误处理

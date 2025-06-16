@@ -12,10 +12,11 @@
         "pkg:linux": "npm run build && pkg -t node18-linux-x64 -o dist/weixing-service-linux .",
         "pkg:all": "npm run build && pkg -t node18-win-x64,node18-macos-x64,node18-linux-x64 -o dist/weixing-service .",
         "test": "jest",
-        "migrate:images": "ts-node src/scripts/migrateImages.ts",
-        "db:vacuum": "ts-node src/scripts/vacuumDb.ts",
+        "migrate:images": "ts-node -e \"import('./src/scripts/migrateImages').then(m => m.runImageMigration(true).then(() => console.log('图片迁移完成')).catch(e => {console.error('图片迁移失败:', e); process.exit(1)}))\"",
+        "db:vacuum": "ts-node -e \"import('./src/scripts/vacuumDb').then(m => m.runVacuum(true).then(() => console.log('数据库VACUUM完成')).catch(e => {console.error('数据库VACUUM失败:', e); process.exit(1)}))\"",
         "db:check": "ts-node scripts/check-db.ts",
-        "db:init": "ts-node -e \"import('./src/services/db-setup-postgres').then(m => m.initializePostgresDB().then(() => console.log('数据库初始化完成')).catch(e => {console.error('数据库初始化失败:', e); process.exit(1)}))\""
+        "db:init": "ts-node -e \"import('./src/services/db-setup-postgres').then(m => m.initializePostgresDB().then(() => console.log('数据库初始化完成')).catch(e => {console.error('数据库初始化失败:', e); process.exit(1)}))\"",
+        "pool:reset": "ts-node scripts/reset-pool.ts"
     },
     "keywords": [],
     "author": "",
