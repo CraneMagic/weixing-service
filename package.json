@@ -13,7 +13,9 @@
         "pkg:all": "npm run build && pkg -t node18-win-x64,node18-macos-x64,node18-linux-x64 -o dist/weixing-service .",
         "test": "jest",
         "migrate:images": "ts-node src/scripts/migrateImages.ts",
-        "db:vacuum": "ts-node src/scripts/vacuumDb.ts"
+        "db:vacuum": "ts-node src/scripts/vacuumDb.ts",
+        "db:check": "ts-node scripts/check-db.ts",
+        "db:init": "ts-node -e \"import('./src/services/db-setup-postgres').then(m => m.initializePostgresDB().then(() => console.log('数据库初始化完成')).catch(e => {console.error('数据库初始化失败:', e); process.exit(1)}))\""
     },
     "keywords": [],
     "author": "",

@@ -260,7 +260,7 @@ export async function closeSQLiteDB(): Promise<void> {
 
 export async function saveQualityRecord(
   data: QualityRecord
-): Promise<QualityRecord> {
+): Promise<{ record: QualityRecord; imageWarning?: string }> {
   // 1. Handle timestamp conversion
   if (data.timestamp && !data.capture_time) {
     const isoTime = convertTimestampToISO(data.timestamp);
@@ -275,11 +275,30 @@ export async function saveQualityRecord(
   }
 
   // 3. Save image and update object_key
+  let imageWarning: string | undefined;
   if (data.image) {
     const filename = `${data.client_ip}_${data.timestamp}`;
-    const savedFilename = saveImageFromBase64(data.image, filename);
-    if (savedFilename) {
-      data.object_key = savedFilename;
+    try {
+      const savedFilename = await saveImageFromBase64(data.image, filename);
+      if (savedFilename) {
+        data.object_key = savedFilename;
+      }
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      logger.warn(`图片保存失败，继续保存记录: ${errorMessage}`);
+
+      // 设置警告信息，但不阻止记录保存
+      if (
+        errorMessage.includes("DISK_FULL") ||
+        errorMessage.includes("ENOSPC")
+      ) {
+        imageWarning = "磁盘空间不足，图片未保存";
+      } else if (errorMessage.includes("EACCES")) {
+        imageWarning = "权限不足，图片未保存";
+      } else {
+        imageWarning = "图片保存失败";
+      }
     }
     delete data.image; // Ensure base64 is not stored in DB
   }
@@ -308,7 +327,7 @@ export async function saveQualityRecord(
     logger.debug(
       `Record saved or updated in PostgreSQL: ${data.client_ip} - ${data.timestamp}`
     );
-    return result.rows[0];
+    return { record: result.rows[0], imageWarning };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     logger.error(

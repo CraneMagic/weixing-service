@@ -11,7 +11,16 @@ import {
   updateStatusFromPassToIgnored as updatePassService,
   updateStatusFromFailToInReview as updateFailService,
 } from "../services/db-postgres";
-import { getImagePath } from "../utils/imageStore";
+import {
+  getImagePath,
+  getDiskSpaceInfo,
+  getImageDirStats,
+} from "../utils/imageStore";
+import {
+  emergencyCleanup,
+  checkAndCleanIfNeeded,
+  cleanupOldImages,
+} from "../utils/cleanup";
 
 /**
  * 创建管材质量检测记录
@@ -26,20 +35,27 @@ export async function createQualityRecord(req: Request, res: Response) {
       });
     }
 
-    // 临时性能优化：只保存 label 为 "fail" 的记录
-    if (data.label !== "fail") {
-      return res.status(200).json({
-        success: true,
-        message: `非 "fail" 记录已跳过保存 (label: ${data.label})`,
-      });
-    }
+    // // 临时性能优化：只保存 label 为 "fail" 的记录
+    // if (data.label !== "fail") {
+    //   return res.status(200).json({
+    //     success: true,
+    //     message: `非 "fail" 记录已跳过保存 (label: ${data.label})`,
+    //   });
+    // }
 
     const result = await saveQualityRecord(data);
 
+    // 构建响应消息
+    let message = "质量检测记录已保存或更新";
+    if (result.imageWarning) {
+      message += `，但${result.imageWarning}`;
+    }
+
     return res.status(201).json({
       success: true,
-      message: "质量检测记录已保存或更新",
-      data: result,
+      message: message,
+      data: result.record,
+      warning: result.imageWarning,
     });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -352,6 +368,225 @@ export async function deleteQualityRecord(req: Request, res: Response) {
     return res.status(500).json({
       success: false,
       message: `删除失败: ${errorMessage}`,
+    });
+  }
+}
+
+/**
+ * 获取存储空间信息
+ */
+export async function getStorageInfo(req: Request, res: Response) {
+  try {
+    const [diskInfo, imageStats] = await Promise.all([
+      getDiskSpaceInfo(),
+      getImageDirStats(),
+    ]);
+
+    const response = {
+      success: true,
+      data: {
+        disk: {
+          ...diskInfo,
+          freeSpaceFormatted: formatBytes(diskInfo.freeSpace),
+          totalSpaceFormatted: formatBytes(diskInfo.totalSpace),
+          usedSpaceFormatted: formatBytes(diskInfo.usedSpace),
+        },
+        images: {
+          ...imageStats,
+          totalSizeFormatted: formatBytes(imageStats.totalSizeBytes),
+          avgFileSizeFormatted: formatBytes(imageStats.avgFileSizeBytes),
+        },
+      },
+    };
+
+    // 如果有磁盘空间警告，设置相应的HTTP状态码
+    if (diskInfo.warning) {
+      const statusCode = diskInfo.freeSpacePercent < 5 ? 507 : 200; // 507 Insufficient Storage
+      return res.status(statusCode).json(response);
+    }
+
+    return res.status(200).json(response);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`获取存储信息失败: ${errorMessage}`);
+    return res.status(500).json({
+      success: false,
+      message: `获取存储信息失败: ${errorMessage}`,
+    });
+  }
+}
+
+/**
+ * 格式化字节数为人类可读的格式
+ */
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return "0 Bytes";
+
+  const k = 1024;
+  const sizes = ["Bytes", "KB", "MB", "GB", "TB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
+}
+
+/**
+ * 手动触发紧急清理
+ */
+export async function triggerEmergencyCleanup(req: Request, res: Response) {
+  try {
+    logger.warn("🚨 手动触发紧急清理");
+
+    // 先获取当前磁盘信息
+    const beforeDiskInfo = await getDiskSpaceInfo();
+
+    // 执行紧急清理
+    const cleanupResult = await emergencyCleanup();
+
+    // 获取清理后的磁盘信息
+    const afterDiskInfo = await getDiskSpaceInfo();
+
+    return res.status(200).json({
+      success: true,
+      message: `紧急清理完成，删除了 ${
+        cleanupResult.deleted
+      } 个文件，释放了 ${Math.round(
+        cleanupResult.spaceFreed / 1024 / 1024
+      )}MB 空间`,
+      data: {
+        cleanup: cleanupResult,
+        diskSpace: {
+          before: {
+            freeSpacePercent: beforeDiskInfo.freeSpacePercent,
+            freeSpaceFormatted: formatBytes(beforeDiskInfo.freeSpace),
+          },
+          after: {
+            freeSpacePercent: afterDiskInfo.freeSpacePercent,
+            freeSpaceFormatted: formatBytes(afterDiskInfo.freeSpace),
+          },
+          improvement:
+            Math.round(
+              (afterDiskInfo.freeSpacePercent -
+                beforeDiskInfo.freeSpacePercent) *
+                100
+            ) / 100,
+        },
+      },
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`手动紧急清理失败: ${errorMessage}`);
+    return res.status(500).json({
+      success: false,
+      message: `紧急清理失败: ${errorMessage}`,
+    });
+  }
+}
+
+/**
+ * 检查磁盘空间并自动清理（如果需要）
+ */
+export async function checkAndAutoClean(req: Request, res: Response) {
+  try {
+    const result = await checkAndCleanIfNeeded();
+
+    if (result.emergencyTriggered) {
+      return res.status(200).json({
+        success: true,
+        message: "检测到磁盘空间不足，已自动执行紧急清理",
+        data: {
+          emergencyTriggered: true,
+          cleanupResult: result.cleanupResult,
+        },
+      });
+    } else {
+      const diskInfo = await getDiskSpaceInfo();
+      return res.status(200).json({
+        success: true,
+        message: "磁盘空间正常，无需清理",
+        data: {
+          emergencyTriggered: false,
+          diskSpacePercent: diskInfo.freeSpacePercent,
+        },
+      });
+    }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`自动检查清理失败: ${errorMessage}`);
+    return res.status(500).json({
+      success: false,
+      message: `检查失败: ${errorMessage}`,
+    });
+  }
+}
+
+/**
+ * 手动触发常规清理
+ */
+export async function triggerRegularCleanup(req: Request, res: Response) {
+  try {
+    logger.info("🧹 手动触发常规清理");
+
+    // 先获取当前磁盘信息
+    const beforeDiskInfo = await getDiskSpaceInfo();
+    const beforeImageStats = await getImageDirStats();
+
+    // 执行常规清理
+    await cleanupOldImages();
+
+    // 获取清理后的信息
+    const afterDiskInfo = await getDiskSpaceInfo();
+    const afterImageStats = await getImageDirStats();
+
+    const deletedFiles =
+      beforeImageStats.totalFiles - afterImageStats.totalFiles;
+    const spaceFreed =
+      beforeImageStats.totalSizeBytes - afterImageStats.totalSizeBytes;
+
+    return res.status(200).json({
+      success: true,
+      message: `常规清理完成，删除了 ${deletedFiles} 个文件，释放了 ${Math.round(
+        spaceFreed / 1024 / 1024
+      )}MB 空间`,
+      data: {
+        cleanup: {
+          deleted: deletedFiles,
+          spaceFreed: spaceFreed,
+          success: true,
+        },
+        diskSpace: {
+          before: {
+            freeSpacePercent: beforeDiskInfo.freeSpacePercent,
+            freeSpaceFormatted: formatBytes(beforeDiskInfo.freeSpace),
+          },
+          after: {
+            freeSpacePercent: afterDiskInfo.freeSpacePercent,
+            freeSpaceFormatted: formatBytes(afterDiskInfo.freeSpace),
+          },
+          improvement:
+            Math.round(
+              (afterDiskInfo.freeSpacePercent -
+                beforeDiskInfo.freeSpacePercent) *
+                100
+            ) / 100,
+        },
+        images: {
+          before: {
+            totalFiles: beforeImageStats.totalFiles,
+            totalSizeFormatted: formatBytes(beforeImageStats.totalSizeBytes),
+          },
+          after: {
+            totalFiles: afterImageStats.totalFiles,
+            totalSizeFormatted: formatBytes(afterImageStats.totalSizeBytes),
+          },
+        },
+      },
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`手动常规清理失败: ${errorMessage}`);
+    return res.status(500).json({
+      success: false,
+      message: `常规清理失败: ${errorMessage}`,
     });
   }
 }

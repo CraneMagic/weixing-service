@@ -1,12 +1,46 @@
 import pool from "./pg-pool";
 import { logger } from "../utils/logger";
 
+/**
+ * 等待数据库连接可用
+ */
+async function waitForDatabase(maxRetries: number = 5): Promise<void> {
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      const client = await pool.connect();
+      await client.query("SELECT 1");
+      client.release();
+      logger.info("✅ PostgreSQL数据库连接成功");
+      return;
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      logger.warn(
+        `🔄 数据库连接尝试 ${i + 1}/${maxRetries} 失败: ${errorMessage}`
+      );
+
+      if (i === maxRetries - 1) {
+        throw new Error(
+          `数据库连接失败，已重试${maxRetries}次: ${errorMessage}`
+        );
+      }
+
+      // 等待2秒后重试
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+  }
+}
+
 export async function initializePostgresDB(): Promise<void> {
+  // 首先等待数据库连接可用
+  await waitForDatabase();
+
   const client = await pool.connect();
   try {
-    logger.info("Setting up PostgreSQL database schema...");
+    logger.info("🔧 开始创建PostgreSQL数据库表和索引...");
 
     // 创建 measurements 表
+    logger.info("📊 创建 measurements 表...");
     await client.query(`
       CREATE TABLE IF NOT EXISTS measurements (
         id SERIAL PRIMARY KEY,
@@ -29,8 +63,10 @@ export async function initializePostgresDB(): Promise<void> {
         calculated_data JSONB
       )
     `);
+    logger.info("✅ measurements 表创建完成");
 
     // 创建 quality_records 表
+    logger.info("📷 创建 quality_records 表...");
     await client.query(`
       CREATE TABLE IF NOT EXISTS quality_records (
         client_ip TEXT NOT NULL,
@@ -58,33 +94,89 @@ export async function initializePostgresDB(): Promise<void> {
         PRIMARY KEY (client_ip, timestamp)
       )
     `);
+    logger.info("✅ quality_records 表创建完成");
 
     // 创建索引
-    await client.query(
-      `CREATE INDEX IF NOT EXISTS idx_measurements_timestamp ON measurements(timestamp)`
-    );
-    await client.query(
-      `CREATE INDEX IF NOT EXISTS idx_measurements_spec_id ON measurements(spec_id)`
-    );
-    await client.query(
-      `CREATE INDEX IF NOT EXISTS idx_measurements_compliance ON measurements(is_compliant)`
-    );
-    await client.query(
-      `CREATE INDEX IF NOT EXISTS idx_quality_records_timestamp ON quality_records(timestamp)`
-    );
-    await client.query(
-      `CREATE INDEX IF NOT EXISTS idx_quality_records_client_ip ON quality_records(client_ip)`
-    );
-    await client.query(
-      `CREATE INDEX IF NOT EXISTS idx_quality_records_label ON quality_records(label)`
-    );
-    await client.query(
-      `CREATE INDEX IF NOT EXISTS idx_quality_records_capture_time ON quality_records(capture_time)`
-    );
+    logger.info("🔗 创建索引...");
+    const indexes = [
+      {
+        name: "idx_measurements_timestamp",
+        table: "measurements",
+        column: "timestamp",
+      },
+      {
+        name: "idx_measurements_spec_id",
+        table: "measurements",
+        column: "spec_id",
+      },
+      {
+        name: "idx_measurements_compliance",
+        table: "measurements",
+        column: "is_compliant",
+      },
+      {
+        name: "idx_quality_records_timestamp",
+        table: "quality_records",
+        column: "timestamp",
+      },
+      {
+        name: "idx_quality_records_client_ip",
+        table: "quality_records",
+        column: "client_ip",
+      },
+      {
+        name: "idx_quality_records_label",
+        table: "quality_records",
+        column: "label",
+      },
+      {
+        name: "idx_quality_records_capture_time",
+        table: "quality_records",
+        column: "capture_time",
+      },
+    ];
 
-    logger.info("PostgreSQL tables and indexes are set up successfully.");
+    for (const index of indexes) {
+      try {
+        await client.query(
+          `CREATE INDEX IF NOT EXISTS ${index.name} ON ${index.table}(${index.column})`
+        );
+        logger.debug(`  ✓ 索引 ${index.name} 创建完成`);
+      } catch (error) {
+        logger.warn(
+          `  ⚠️ 索引 ${index.name} 创建失败: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+      }
+    }
+
+    // 验证表是否创建成功
+    logger.info("🔍 验证表创建状态...");
+    const tablesResult = await client.query(`
+      SELECT table_name FROM information_schema.tables 
+      WHERE table_schema = 'public' 
+      AND table_name IN ('measurements', 'quality_records')
+    `);
+
+    const createdTables = tablesResult.rows.map((row) => row.table_name);
+    logger.info(`📋 已创建的表: ${createdTables.join(", ")}`);
+
+    if (
+      createdTables.includes("measurements") &&
+      createdTables.includes("quality_records")
+    ) {
+      logger.info("🎉 PostgreSQL数据库表和索引全部创建成功！");
+    } else {
+      throw new Error(
+        `表创建不完整，期望: measurements, quality_records，实际: ${createdTables.join(
+          ", "
+        )}`
+      );
+    }
   } catch (error) {
-    logger.error("Error setting up PostgreSQL database schema:", error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error("❌ PostgreSQL数据库表创建失败:", errorMessage);
     throw error;
   } finally {
     client.release();

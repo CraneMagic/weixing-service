@@ -10,12 +10,28 @@ import {
   updateFailToInReview,
   deleteQualityRecord,
   getImage,
+  getStorageInfo,
+  triggerEmergencyCleanup,
+  checkAndAutoClean,
+  triggerRegularCleanup,
 } from "../controllers/qualityRecordController";
 
 const router = Router();
 
 // 图片获取路由
 router.get("/images/:filename", getImage);
+
+// 存储空间信息路由
+router.get("/storage-info", getStorageInfo);
+
+// 常规清理路由
+router.post("/regular-cleanup", triggerRegularCleanup);
+
+// 紧急清理路由
+router.post("/emergency-cleanup", triggerEmergencyCleanup);
+
+// 自动检查并清理路由
+router.post("/auto-check-cleanup", checkAndAutoClean);
 
 // 创建质量检测记录
 router.post("/", createQualityRecord);

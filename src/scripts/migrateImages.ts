@@ -33,18 +33,22 @@ export async function runImageMigration(): Promise<{
     for (const record of recordsToMigrate) {
       if (record.image) {
         const filename = `${record.client_ip}_${record.timestamp}`;
-        const savedFilename = saveImageFromBase64(record.image, filename);
-
-        if (savedFilename) {
+        try {
+          const savedFilename = await saveImageFromBase64(
+            record.image,
+            filename
+          );
           await updateQualityRecord(record.client_ip, record.timestamp, {
-            object_key: savedFilename,
+            object_key: savedFilename || undefined,
             image: null, // 清空image字段
           });
           migratedCount++;
-        } else {
+        } catch (error) {
           failedCount++;
+          const errorMessage =
+            error instanceof Error ? error.message : String(error);
           logger.error(
-            `迁移记录失败，无法保存图片: ${record.client_ip}_${record.timestamp}`
+            `迁移记录失败，无法保存图片 ${record.client_ip}_${record.timestamp}: ${errorMessage}`
           );
         }
       }
