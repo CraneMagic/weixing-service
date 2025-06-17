@@ -1,6 +1,7 @@
 import { Router } from "express";
 import {
   createQualityRecord,
+  batchCreateQualityRecords,
   getQualityRecords,
   getQualityRecordsStatsBySecond,
   getQualityRecordsStatsBySecondAndIp,
@@ -34,6 +35,9 @@ router.post("/emergency-cleanup", triggerEmergencyCleanup);
 
 // 自动检查并清理路由
 router.post("/auto-check-cleanup", checkAndAutoClean);
+
+// 批量创建质量检测记录
+router.post("/batch", batchCreateQualityRecords);
 
 // 创建质量检测记录
 router.post("/", createQualityRecord);

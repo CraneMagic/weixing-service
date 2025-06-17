@@ -258,6 +258,143 @@ export async function closeSQLiteDB(): Promise<void> {
   return Promise.resolve();
 }
 
+export async function batchSaveQualityRecords(
+  records: QualityRecord[]
+): Promise<{
+  success: number;
+  failed: number;
+  warnings: string[];
+  results: Array<{ record: QualityRecord; imageWarning?: string }>;
+}> {
+  if (!records || records.length === 0) {
+    return { success: 0, failed: 0, warnings: [], results: [] };
+  }
+
+  const results: Array<{ record: QualityRecord; imageWarning?: string }> = [];
+  const warnings: string[] = [];
+  let success = 0;
+  let failed = 0;
+
+  // 使用事务处理批量插入
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    // 处理每条记录
+    for (let i = 0; i < records.length; i++) {
+      const data = { ...records[i] }; // 创建副本避免修改原数据
+
+      try {
+        // 1. Handle timestamp conversion
+        if (data.timestamp && !data.capture_time) {
+          const isoTime = convertTimestampToISO(data.timestamp);
+          data.capture_time = isoTime === null ? undefined : isoTime;
+        }
+
+        // 2. Set status based on label
+        if (data.label === "pass") {
+          data.status = "IGNORED";
+        } else if (data.label === "fail") {
+          data.status = undefined; // In PostgreSQL this will be NULL
+        }
+
+        // 3. Save image and update object_key
+        let imageWarning: string | undefined;
+        if (data.image) {
+          const filename = `${data.client_ip}_${data.timestamp}`;
+          try {
+            const savedFilename = await saveImageFromBase64(
+              data.image,
+              filename
+            );
+            if (savedFilename) {
+              data.object_key = savedFilename;
+            }
+          } catch (error) {
+            const errorMessage =
+              error instanceof Error ? error.message : String(error);
+            logger.warn(
+              `批量保存中图片保存失败 (记录${i + 1}): ${errorMessage}`
+            );
+
+            if (
+              errorMessage.includes("DISK_FULL") ||
+              errorMessage.includes("ENOSPC")
+            ) {
+              imageWarning = "磁盘空间不足，图片未保存";
+            } else if (errorMessage.includes("EACCES")) {
+              imageWarning = "权限不足，图片未保存";
+            } else {
+              imageWarning = "图片保存失败";
+            }
+          }
+          delete data.image; // Ensure base64 is not stored in DB
+        }
+
+        // 4. Insert record into database
+        const columns = Object.keys(data).filter(
+          (k) => (data as any)[k] !== undefined
+        );
+        const values = columns.map((k) => (data as any)[k]);
+        const placeholders = columns.map((_, i) => `$${i + 1}`).join(", ");
+
+        const updateColumns = columns
+          .filter((col) => col !== "client_ip" && col !== "timestamp")
+          .map((col) => `"${col}" = EXCLUDED."${col}"`)
+          .join(", ");
+
+        const sql = `
+          INSERT INTO quality_records (${columns
+            .map((c) => `"${c}"`)
+            .join(", ")})
+          VALUES (${placeholders})
+          ON CONFLICT (client_ip, timestamp)
+          DO UPDATE SET ${updateColumns}
+          RETURNING *
+        `;
+
+        const result = await client.query(sql, values);
+        results.push({ record: result.rows[0], imageWarning });
+        success++;
+
+        if (imageWarning) {
+          warnings.push(
+            `记录${i + 1} (${data.client_ip}_${
+              data.timestamp
+            }): ${imageWarning}`
+          );
+        }
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        logger.error(`批量保存中记录${i + 1}失败: ${errorMessage}`, {
+          client_ip: data.client_ip,
+          timestamp: data.timestamp,
+        });
+        warnings.push(
+          `记录${i + 1} (${data.client_ip}_${
+            data.timestamp
+          }): 保存失败 - ${errorMessage}`
+        );
+        failed++;
+      }
+    }
+
+    await client.query("COMMIT");
+    logger.info(`批量保存完成: 成功${success}条, 失败${failed}条`);
+  } catch (error) {
+    await client.query("ROLLBACK");
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`批量保存事务失败: ${errorMessage}`);
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  return { success, failed, warnings, results };
+}
+
 export async function saveQualityRecord(
   data: QualityRecord
 ): Promise<{ record: QualityRecord; imageWarning?: string }> {

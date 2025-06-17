@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { logger } from "../utils/logger";
 import {
   saveQualityRecord,
+  batchSaveQualityRecords,
   getQualityRecords as getRecords,
   getQualityRecord as getRecord,
   updateQualityRecord as updateRecord,
@@ -21,6 +22,78 @@ import {
   checkAndCleanIfNeeded,
   cleanupOldImages,
 } from "../utils/cleanup";
+
+/**
+ * 批量创建管材质量检测记录
+ */
+export async function batchCreateQualityRecords(req: Request, res: Response) {
+  try {
+    const { records } = req.body;
+
+    if (!records || !Array.isArray(records) || records.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "请提供有效的记录数组",
+      });
+    }
+
+    // 验证每条记录的必要字段
+    const invalidRecords: number[] = [];
+    records.forEach((record, index) => {
+      if (!record || !record.client_ip || !record.timestamp) {
+        invalidRecords.push(index + 1);
+      }
+    });
+
+    if (invalidRecords.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `记录 ${invalidRecords.join(
+          ", "
+        )} 缺少必要字段 (client_ip 或 timestamp)`,
+      });
+    }
+
+    // 限制批量大小，防止过大的请求
+    const MAX_BATCH_SIZE = 100;
+    if (records.length > MAX_BATCH_SIZE) {
+      return res.status(400).json({
+        success: false,
+        message: `批量大小不能超过 ${MAX_BATCH_SIZE} 条记录，当前: ${records.length} 条`,
+      });
+    }
+
+    const result = await batchSaveQualityRecords(records);
+
+    // 构建响应
+    let message = `批量处理完成: 成功 ${result.success} 条, 失败 ${result.failed} 条`;
+    if (result.warnings.length > 0) {
+      message += `, 有 ${result.warnings.length} 个警告`;
+    }
+
+    const statusCode =
+      result.failed === 0 ? 201 : result.success > 0 ? 207 : 400;
+
+    return res.status(statusCode).json({
+      success: result.failed === 0,
+      message: message,
+      data: {
+        total: records.length,
+        success: result.success,
+        failed: result.failed,
+        results: result.results,
+      },
+      warnings: result.warnings.length > 0 ? result.warnings : undefined,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`批量保存质量检测记录失败: ${errorMessage}`);
+    return res.status(500).json({
+      success: false,
+      message: `批量保存失败: ${errorMessage}`,
+    });
+  }
+}
 
 /**
  * 创建管材质量检测记录
