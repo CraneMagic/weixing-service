@@ -16,6 +16,7 @@ import {
   triggerRegularCleanup,
 } from "../controllers/qualityRecordController";
 import { Request, Response } from "express";
+import { checkPoolHealth } from "../services/pg-pool";
 
 const router = Router();
 
@@ -62,7 +63,6 @@ router.delete("/:client_ip/:timestamp", deleteQualityRecord);
 // 添加连接池状态监控端点
 router.get("/pool-status", async (req: Request, res: Response) => {
   try {
-    const { checkPoolHealth } = await import("../services/pg-pool");
     const poolHealth = await checkPoolHealth();
 
     res.status(200).json({

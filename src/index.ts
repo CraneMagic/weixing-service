@@ -13,6 +13,7 @@ import { initializeDatabase } from "./services/db";
 import { setupCleanupJob } from "./services/cleanup";
 import { initializeScheduler } from "./services/scheduler";
 import { initializePostgresDB } from "./services/db-setup-postgres";
+import { checkPoolHealth } from "./services/pg-pool";
 import { startSchedulers } from "./scheduler";
 
 // 加载环境变量
@@ -66,7 +67,6 @@ async function startApplication() {
     // 健康检查路由
     app.get("/health", async (req, res) => {
       try {
-        const { checkPoolHealth } = await import("./services/pg-pool");
         const poolHealth = await checkPoolHealth();
 
         res.status(poolHealth.healthy ? 200 : 503).json({

@@ -134,13 +134,32 @@ export async function initializePostgresDB(): Promise<void> {
         table: "quality_records",
         column: "capture_time",
       },
+      // 为聚合查询优化的复合索引
+      {
+        name: "idx_quality_records_time_group",
+        table: "quality_records",
+        column: "(SUBSTRING(timestamp, 1, 14))",
+        sql: "CREATE INDEX IF NOT EXISTS idx_quality_records_time_group ON quality_records(SUBSTRING(timestamp, 1, 14))",
+      },
+      {
+        name: "idx_quality_records_time_ip_composite",
+        table: "quality_records",
+        column: "(SUBSTRING(timestamp, 1, 14), client_ip)",
+        sql: "CREATE INDEX IF NOT EXISTS idx_quality_records_time_ip_composite ON quality_records(SUBSTRING(timestamp, 1, 14), client_ip)",
+      },
     ];
 
     for (const index of indexes) {
       try {
-        await client.query(
-          `CREATE INDEX IF NOT EXISTS ${index.name} ON ${index.table}(${index.column})`
-        );
+        if (index.sql) {
+          // 使用自定义SQL创建复合索引
+          await client.query(index.sql);
+        } else {
+          // 使用标准方式创建索引
+          await client.query(
+            `CREATE INDEX IF NOT EXISTS ${index.name} ON ${index.table}(${index.column})`
+          );
+        }
         logger.debug(`  ✓ 索引 ${index.name} 创建完成`);
       } catch (error) {
         logger.warn(
