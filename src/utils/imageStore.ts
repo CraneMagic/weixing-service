@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import { logger } from "./logger";
 
-const imageDir = path.join(process.env.DB_PATH || "./data", "images");
+const imageDir = path.join(process.env.DB_PATH || "./data", "/images");
 
 /**
  * 确保图片存储目录存在
