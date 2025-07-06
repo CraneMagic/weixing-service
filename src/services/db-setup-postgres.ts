@@ -68,6 +68,28 @@ export async function initializePostgresDB(): Promise<void> {
     `);
     logger.info("✅ measurements 表创建完成");
 
+    // 确保新增列存在（旧表无法通过 CREATE TABLE IF NOT EXISTS 自动添加列）
+    const newColumns = [
+      { name: "is_calibration", type: "INTEGER" },
+      { name: "calibration_type", type: "TEXT" },
+      { name: "calibration_index", type: "INTEGER" },
+    ];
+
+    for (const col of newColumns) {
+      try {
+        await client.query(
+          `ALTER TABLE measurements ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`
+        );
+        logger.debug(`  ✓ 列 ${col.name} 已存在或创建成功`);
+      } catch (error) {
+        logger.warn(
+          `  ⚠️ 列 ${col.name} 创建失败: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+      }
+    }
+
     // 创建 quality_records 表
     logger.info("📷 创建 quality_records 表...");
     await client.query(`
@@ -116,6 +138,11 @@ export async function initializePostgresDB(): Promise<void> {
         name: "idx_measurements_compliance",
         table: "measurements",
         column: "is_compliant",
+      },
+      {
+        name: "idx_measurements_is_calibration",
+        table: "measurements",
+        column: "is_calibration",
       },
       {
         name: "idx_quality_records_timestamp",
