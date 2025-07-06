@@ -168,9 +168,13 @@ const defaultParameters = [
         luma: 60,
         contrast: 75,
         saturation: 50,
+
         fps: 12,
         width: 1200,
         jpeg_quality: 80,
+        label_score_threshold: 0.35,
+        detection_score_threshold: 35,
+        force_pass: false,
       },
     },
   },
