@@ -105,12 +105,18 @@ function transformMeasurement(record: any) {
     wall_min,
     outer_non_circularity,
     inner_non_circularity,
+    is_calibration,
+    calibration_type,
+    calibration_index,
   } = record;
 
   return {
     id: String(id),
     timestamp,
     specId: spec_id,
+    isCalibration: is_calibration,
+    calibrationType: calibration_type,
+    calibrationIndex: calibration_index,
     correctedData: corrected_data || {
       outerAdjusted: [],
       innerAdjusted: [],
