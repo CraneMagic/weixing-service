@@ -180,6 +180,10 @@ const defaultParameters = [
       outerDiameterCorrectionValue: -18075,
       innerDiameterCorrectionValue: 4650,
       maxValueAdjustmentFactor: 1,
+
+      calibrationFactorForOuterDiameter: 1,
+      calibrationFactorForInnerDiameter: 1,
+      calibrationFactorForWallThickness: 1,
     },
   },
 ];
