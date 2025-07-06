@@ -221,6 +221,121 @@ export async function getMeasurements(options: {
   }
 }
 
+export async function getMeasurementsCsv(options: {
+  spec_id?: string;
+  spec_name?: string;
+  is_compliant?: string;
+  is_calibration?: string;
+  calibration_type?: string;
+  calibration_index?: string;
+  startTime?: string;
+  endTime?: string;
+  sortBy?: string;
+  sortOrder?: "ASC" | "DESC";
+}): Promise<any[]> {
+  // 基于 getMeasurements 的实现，但不加入 LIMIT/OFFSET
+  const {
+    spec_id,
+    spec_name,
+    is_compliant,
+    is_calibration,
+    calibration_type,
+    calibration_index,
+    startTime,
+    endTime,
+    sortBy = "timestamp",
+    sortOrder = "DESC",
+  } = options;
+
+  const validSortBy = [
+    "id",
+    "timestamp",
+    "spec_id",
+    "spec_name",
+    "is_compliant",
+    "is_calibration",
+    "calibration_type",
+    "calibration_index",
+    "outer_max",
+    "outer_avg",
+    "outer_min",
+    "inner_max",
+    "inner_avg",
+    "inner_min",
+    "wall_max",
+    "wall_avg",
+    "wall_min",
+    "outer_non_circularity",
+    "inner_non_circularity",
+  ];
+  const orderBy = validSortBy.includes(sortBy) ? `"${sortBy}"` : "timestamp";
+  const orderDirection = sortOrder === "ASC" ? "ASC" : "DESC";
+
+  let query = `SELECT * FROM measurements`;
+  const params: any[] = [];
+  const conditions: string[] = [];
+  let paramIndex = 1;
+
+  if (spec_id) {
+    conditions.push(`spec_id = $${paramIndex++}`);
+    params.push(spec_id);
+  }
+  if (spec_name) {
+    conditions.push(`spec_name LIKE $${paramIndex++}`);
+    params.push(`%${spec_name}%`);
+  }
+  if (is_compliant) {
+    conditions.push(`is_compliant = $${paramIndex++}`);
+    params.push(parseInt(is_compliant, 10));
+  }
+  if (is_calibration !== undefined) {
+    const calib = parseInt(is_calibration as any, 10);
+    if (calib === 0 || calib === 1) {
+      conditions.push(`is_calibration = $${paramIndex++}`);
+      params.push(calib);
+    }
+  }
+  if (calibration_type) {
+    const typeUpper = String(calibration_type).toUpperCase();
+    if (["A", "B", "C"].includes(typeUpper)) {
+      conditions.push(`calibration_type = $${paramIndex++}`);
+      params.push(typeUpper);
+    }
+  }
+  if (calibration_index !== undefined) {
+    const idx = parseInt(calibration_index as any, 10);
+    if (!isNaN(idx) && idx >= 1 && idx <= 11) {
+      conditions.push(`calibration_index = $${paramIndex++}`);
+      params.push(idx);
+    }
+  }
+  if (startTime) {
+    conditions.push(`timestamp >= $${paramIndex++}`);
+    params.push(startTime);
+  }
+  if (endTime) {
+    conditions.push(`timestamp <= $${paramIndex++}`);
+    params.push(endTime);
+  }
+
+  if (conditions.length > 0) {
+    query += ` WHERE ` + conditions.join(" AND ");
+  }
+
+  query += ` ORDER BY ${orderBy} ${orderDirection}`;
+
+  try {
+    const { rows } = await pool.query(query, params);
+    return rows;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(
+      `Failed to export measurements from PostgreSQL: ${errorMessage}`
+    );
+    throw error;
+  }
+}
+
 export async function getRecentMeasurements(
   hours: number,
   limit: number,

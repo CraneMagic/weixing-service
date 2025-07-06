@@ -9,9 +9,11 @@ import {
   getTrendData,
   cleanupOldData,
   optimizeDatabase,
+  getMeasurementsCsv,
 } from "../services/db-postgres";
 import { getParameter } from "../services/db";
 import { logger } from "../utils/logger";
+// 使用原生 Date 格式化生成文件名
 
 /**
  * 保存测量数据
@@ -402,6 +404,98 @@ export async function optimize(req: Request, res: Response) {
     return res.status(500).json({
       success: false,
       message: `优化失败: ${errorMessage}`,
+    });
+  }
+}
+
+/**
+ * 下载测量数据 CSV
+ */
+export async function downloadMeasurementsCsv(req: Request, res: Response) {
+  try {
+    const {
+      spec_id,
+      spec_name,
+      is_compliant,
+      is_calibration,
+      calibration_type,
+      calibration_index,
+      startTime,
+      endTime,
+      sortBy = "timestamp",
+      sortOrder = "DESC",
+    } = req.query;
+
+    const options = {
+      spec_id: spec_id as string | undefined,
+      spec_name: spec_name as string | undefined,
+      is_compliant: is_compliant as string | undefined,
+      is_calibration: is_calibration as string | undefined,
+      calibration_type: calibration_type as string | undefined,
+      calibration_index: calibration_index as string | undefined,
+      startTime: startTime as string | undefined,
+      endTime: endTime as string | undefined,
+      sortBy: sortBy as string,
+      sortOrder: sortOrder as "ASC" | "DESC",
+    };
+
+    const rows = await getMeasurementsCsv(options);
+
+    // 定义 CSV 列顺序
+    const headers = [
+      "id",
+      "timestamp",
+      "spec_id",
+      "spec_name",
+      "outer_max",
+      "outer_avg",
+      "outer_min",
+      "inner_max",
+      "inner_avg",
+      "inner_min",
+      "wall_max",
+      "wall_avg",
+      "wall_min",
+      "outer_non_circularity",
+      "inner_non_circularity",
+      "is_compliant",
+      "is_calibration",
+      "calibration_type",
+      "calibration_index",
+    ];
+
+    const escape = (value: any): string => {
+      if (value === null || value === undefined) return "";
+      let str =
+        typeof value === "object" ? JSON.stringify(value) : String(value);
+      str = str.replace(/"/g, '""');
+      if (str.includes(",") || str.includes("\n") || str.includes("\r")) {
+        str = `"${str}"`;
+      }
+      return str;
+    };
+
+    const csvLines = [headers.join(",")];
+    for (const row of rows) {
+      const line = headers.map((h) => escape((row as any)[h])).join(",");
+      csvLines.push(line);
+    }
+
+    const iso = new Date().toISOString().replace(/[-:]/g, "").split(".")[0]; // e.g., 20250618T083045
+    const filename = `measurements_${iso}.csv`;
+
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename=\"${filename}\"`
+    );
+    res.status(200).send(csvLines.join("\n"));
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`导出测量数据失败: ${errorMessage}`);
+    res.status(500).json({
+      success: false,
+      message: `导出失败: ${errorMessage}`,
     });
   }
 }

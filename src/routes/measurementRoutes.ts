@@ -10,6 +10,7 @@ import {
   cleanup,
   optimize,
   sendUdpData,
+  downloadMeasurementsCsv,
 } from "../controllers/measurementController";
 
 const router = Router();
@@ -26,6 +27,7 @@ router.post("/maintenance/optimize", optimize);
 
 // 获取测量数据列表（支持分页、筛选、排序）
 router.get("/", getMeasurements);
+router.get("/csv", downloadMeasurementsCsv);
 
 // 获取最近的测量数据
 router.get("/recent", getRecentData);
