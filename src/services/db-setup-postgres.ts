@@ -59,6 +59,9 @@ export async function initializePostgresDB(): Promise<void> {
         outer_non_circularity REAL,
         inner_non_circularity REAL,
         is_compliant INTEGER,
+        is_calibration INTEGER,
+        calibration_type TEXT,
+        calibration_index INTEGER,
         corrected_data JSONB,
         calculated_data JSONB
       )

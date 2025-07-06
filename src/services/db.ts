@@ -186,6 +186,29 @@ const defaultParameters = [
       calibrationFactorForWallThickness: 1,
     },
   },
+  {
+    key: "calibrationConfig",
+    value: {
+      A: {
+        calibrationType: "A",
+        outerDiameterStandardAvgValue: 24.89,
+        innerDiameterStandardAvgValue: 0,
+        wallThicknessStandardAvgValue: 3.94,
+      },
+      B: {
+        calibrationType: "B",
+        outerDiameterStandardAvgValue: 24.89,
+        innerDiameterStandardAvgValue: 0,
+        wallThicknessStandardAvgValue: 3.94,
+      },
+      C: {
+        calibrationType: "C",
+        outerDiameterStandardAvgValue: 24.89,
+        innerDiameterStandardAvgValue: 0,
+        wallThicknessStandardAvgValue: 3.94,
+      },
+    },
+  },
 ];
 
 /**

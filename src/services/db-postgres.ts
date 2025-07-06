@@ -18,7 +18,16 @@ export async function saveMeasurement(data: any, specInfo?: any): Promise<any> {
     caculatedData, // from the flattened object provided by user
     resultData,
     isCompliant, // assuming it's pre-calculated and passed in `data`
+    isCalibration,
+    calibrationType,
+    calibrationIndex,
   } = data;
+
+  // 标准化 isCalibration，只允许运行 0/1
+  const isCalibrationNormalized =
+    isCalibration === 1 || isCalibration === "1" || isCalibration === true
+      ? 1
+      : 0;
 
   const sql = `
     INSERT INTO measurements (
@@ -27,9 +36,10 @@ export async function saveMeasurement(data: any, specInfo?: any): Promise<any> {
       inner_max, inner_avg, inner_min, 
       wall_max, wall_avg, wall_min, 
       outer_non_circularity, inner_non_circularity, 
-      is_compliant, corrected_data, calculated_data
+      is_compliant, is_calibration, calibration_type, calibration_index, 
+      corrected_data, calculated_data
     ) VALUES (
-      $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17
+      $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20
     ) RETURNING *;
   `;
 
@@ -49,6 +59,9 @@ export async function saveMeasurement(data: any, specInfo?: any): Promise<any> {
     resultData?.outerNonCircularity,
     resultData?.innerNonCircularity,
     isCompliant,
+    isCalibrationNormalized,
+    calibrationType,
+    calibrationIndex,
     correctedData,
     caculatedData, // Map incoming `caculatedData` to `calculated_data` column
   ];
@@ -77,6 +90,9 @@ export async function getMeasurements(options: {
   spec_id?: string;
   spec_name?: string;
   is_compliant?: string;
+  is_calibration?: string;
+  calibration_type?: string;
+  calibration_index?: string;
   startTime?: string;
   endTime?: string;
   sortBy?: string;
@@ -93,6 +109,9 @@ export async function getMeasurements(options: {
     spec_id,
     spec_name,
     is_compliant,
+    is_calibration,
+    calibration_type,
+    calibration_index,
     startTime,
     endTime,
     sortBy = "timestamp",
@@ -105,6 +124,9 @@ export async function getMeasurements(options: {
     "spec_id",
     "spec_name",
     "is_compliant",
+    "is_calibration",
+    "calibration_type",
+    "calibration_index",
     "outer_max",
     "outer_avg",
     "outer_min",
@@ -137,6 +159,30 @@ export async function getMeasurements(options: {
   if (is_compliant) {
     conditions.push(`is_compliant = $${paramIndex++}`);
     params.push(parseInt(is_compliant, 10));
+  }
+  if (is_calibration !== undefined) {
+    const calib = parseInt(is_calibration as any, 10);
+    if (calib === 0 || calib === 1) {
+      conditions.push(`is_calibration = $${paramIndex++}`);
+      params.push(calib);
+    }
+    // 非 0/1 的值将被忽略，不加入过滤条件
+  }
+  if (calibration_type) {
+    const typeUpper = String(calibration_type).toUpperCase();
+    if (["A", "B", "C"].includes(typeUpper)) {
+      conditions.push(`calibration_type = $${paramIndex++}`);
+      params.push(typeUpper);
+    }
+    // 不在 A/B/C 范围内的值将被忽略
+  }
+  if (calibration_index !== undefined) {
+    const idx = parseInt(calibration_index as any, 10);
+    if (!isNaN(idx) && idx >= 1 && idx <= 11) {
+      conditions.push(`calibration_index = $${paramIndex++}`);
+      params.push(idx);
+    }
+    // 超出 1-11 范围或非数字均被忽略
   }
   if (startTime) {
     conditions.push(`timestamp >= $${paramIndex++}`);
