@@ -21,8 +21,8 @@ import { checkPoolHealth } from "../services/pg-pool";
 
 const router = Router();
 
-// 图片获取路由
-router.get("/images/:filename", getImage);
+// 图片获取路由 - 支持子目录结构
+router.get("/images/*", getImage);
 
 // 存储空间信息路由
 router.get("/storage-info", getStorageInfo);

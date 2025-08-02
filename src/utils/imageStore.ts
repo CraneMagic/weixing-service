@@ -149,22 +149,23 @@ export async function saveImageFromBase64(
 
 /**
  * 获取图片的完整路径
- * @param filename 带扩展名的文件名
+ * @param imagePath 图片路径，可以是文件名或子目录路径
  * @returns 图片的绝对路径，如果不存在则返回null
  */
-export function getImagePath(filename: string): string | null {
+export function getImagePath(imagePath: string): string | null {
   const absoluteImageDir = path.resolve(imageDir);
-  const imagePath = path.join(absoluteImageDir, filename);
+  const fullImagePath = path.join(absoluteImageDir, imagePath);
 
   // 安全性检查：确保文件名不会导致目录遍历
-  if (path.dirname(imagePath) !== absoluteImageDir) {
-    logger.warn(`检测到潜在的目录遍历攻击: ${filename}`);
+  const resolvedPath = path.resolve(fullImagePath);
+  if (!resolvedPath.startsWith(absoluteImageDir)) {
+    logger.warn(`检测到潜在的目录遍历攻击: ${imagePath}`);
     return null;
   }
 
-  logger.info(`正在检查图片路径: ${imagePath}`);
-  if (fs.existsSync(imagePath)) {
-    return imagePath;
+  logger.info(`正在检查图片路径: ${fullImagePath}`);
+  if (fs.existsSync(fullImagePath)) {
+    return fullImagePath;
   }
 
   return null;

@@ -223,22 +223,23 @@ export async function getQualityRecordsStatsBySecond(
  */
 export async function getImage(req: Request, res: Response) {
   try {
-    const filename = req.params.filename;
-    if (!filename) {
+    // 使用 req.params[0] 获取通配符匹配的完整路径
+    const imagePath = req.params[0];
+    if (!imagePath) {
       return res.status(400).json({
         success: false,
-        message: "缺少文件名",
+        message: "缺少图片路径",
       });
     }
 
-    const imagePath = getImagePath(filename);
+    const fullImagePath = getImagePath(imagePath);
 
-    if (imagePath) {
-      res.sendFile(imagePath);
+    if (fullImagePath) {
+      res.sendFile(fullImagePath);
     } else {
       res.status(404).json({
         success: false,
-        message: "未找到图片文件",
+        message: `未找到图片文件: ${imagePath}`,
       });
     }
   } catch (error) {
