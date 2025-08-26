@@ -23,13 +23,10 @@ export const logger = winston.createLogger({
         )
       ),
     }),
-    // 文件输出
+    // 只保存错误日志到文件
     new winston.transports.File({
       filename: path.join("logs", "error.log"),
       level: "error",
-    }),
-    new winston.transports.File({
-      filename: path.join("logs", "combined.log"),
     }),
   ],
 });
