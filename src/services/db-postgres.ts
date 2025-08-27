@@ -809,10 +809,13 @@ export async function getQualityRecordsGroupedBySecond(options: {
       pool.query(countQuery, countParams),
     ]);
 
-    const data = rows.reduce((acc, row) => {
-      acc[row.time_group] = row.records;
-      return acc;
-    }, {});
+    const data = rows.reduce<Record<string, any[]>>(
+      (acc: Record<string, any[]>, row: any) => {
+        acc[row.time_group as string] = row.records as any[];
+        return acc;
+      },
+      {} as Record<string, any[]>
+    );
 
     const total = countRows.length > 0 ? parseInt(countRows[0].count, 10) : 0;
 
@@ -870,23 +873,30 @@ export async function getQualityRecordsGroupedBySecondAndIp(options: {
   try {
     const { rows } = await pool.query(query, params);
 
-    const data = rows.reduce((acc, row) => {
-      const { time_group, client_ip, records } = row;
-      if (!acc[time_group]) {
-        acc[time_group] = {};
-      }
-      acc[time_group][client_ip] = records;
-      return acc;
-    }, {});
+    const data = rows.reduce<Record<string, Record<string, any[]>>>(
+      (acc: Record<string, Record<string, any[]>>, row: any) => {
+        const time_group = row.time_group as string;
+        const client_ip = row.client_ip as string;
+        const records = row.records as any[];
+        if (!acc[time_group]) {
+          acc[time_group] = {} as Record<string, any[]>;
+        }
+        acc[time_group][client_ip] = records;
+        return acc;
+      },
+      {} as Record<string, Record<string, any[]>>
+    );
 
     const total = Object.keys(data).length;
 
     // Manually slice the object for pagination
     const paginatedKeys = Object.keys(data).slice(offset, offset + limit);
-    const paginatedData = paginatedKeys.reduce((acc, key) => {
+    const paginatedData = paginatedKeys.reduce<
+      Record<string, Record<string, any[]>>
+    >((acc, key) => {
       acc[key] = data[key];
       return acc;
-    }, {} as any);
+    }, {} as Record<string, Record<string, any[]>>);
 
     return {
       data: paginatedData,
@@ -1092,13 +1102,169 @@ export async function getFilenamesToClean(): Promise<string[]> {
 
   try {
     const { rows } = await pool.query(query, params);
-    return rows.map((row) => row.filename);
+    return rows.map((row: any) => row.filename as string);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     logger.error(`从PostgreSQL获取待清理文件名失败: ${errorMessage}`, {
       query: query,
       params: params,
     });
+    throw error;
+  }
+}
+
+export async function getQualityRecordsGroupedBySecondSummary(options: {
+  limit?: number;
+  offset?: number;
+  startTime?: string;
+  endTime?: string;
+}): Promise<any> {
+  const { startTime, endTime, limit = 60, offset = 0 } = options;
+
+  const timeFilterSql = `
+    WHERE ($1::timestamptz IS NULL OR capture_time >= $1)
+      AND ($2::timestamptz IS NULL OR capture_time <= $2)
+  `;
+
+  const groupsSql = `
+    WITH tg AS (
+      SELECT date_trunc('second', capture_time) AS time_group
+      FROM quality_records
+      ${timeFilterSql}
+      GROUP BY 1
+      ORDER BY 1 DESC
+      LIMIT $3 OFFSET $4
+    )
+    SELECT 
+      to_char(tg.time_group, 'YYYYMMDDHH24MISS') AS time_group,
+      COUNT(*)::int AS total,
+      COUNT(*) FILTER (WHERE t.label = 'fail')::int AS fail,
+      COUNT(*) FILTER (WHERE t.label = 'pass')::int AS pass
+    FROM tg
+    JOIN quality_records t
+      ON date_trunc('second', t.capture_time) = tg.time_group
+    GROUP BY tg.time_group
+    ORDER BY tg.time_group DESC
+  `;
+
+  const countGroupsSql = `
+    SELECT COUNT(DISTINCT date_trunc('second', capture_time))::int AS count
+    FROM quality_records
+    ${timeFilterSql}
+  `;
+
+  try {
+    const [{ rows }, { rows: countRows }] = await Promise.all([
+      pool.query(groupsSql, [
+        startTime || null,
+        endTime || null,
+        limit,
+        offset,
+      ]),
+      pool.query(countGroupsSql, [startTime || null, endTime || null]),
+    ]);
+
+    const data = rows.reduce((acc: any, row: any) => {
+      acc[row.time_group] = {
+        total: row.total,
+        fail: row.fail,
+        pass: row.pass,
+      };
+      return acc;
+    }, {});
+
+    const total = countRows.length > 0 ? countRows[0].count : 0;
+
+    return {
+      data,
+      total,
+      page: offset / limit + 1,
+      limit,
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(
+      `Failed to get summarized quality records grouped by second: ${errorMessage}`
+    );
+    throw error;
+  }
+}
+
+export async function getQualityRecordsGroupedBySecondAndIpSummary(options: {
+  limit?: number;
+  offset?: number;
+  startTime?: string;
+  endTime?: string;
+}): Promise<any> {
+  const { startTime, endTime, limit = 60, offset = 0 } = options;
+
+  const timeFilterSql = `
+    WHERE ($1::timestamptz IS NULL OR capture_time >= $1)
+      AND ($2::timestamptz IS NULL OR capture_time <= $2)
+  `;
+
+  const groupsSql = `
+    WITH tg AS (
+      SELECT date_trunc('second', capture_time) AS time_group
+      FROM quality_records
+      ${timeFilterSql}
+      GROUP BY 1
+      ORDER BY 1 DESC
+      LIMIT $3 OFFSET $4
+    )
+    SELECT 
+      to_char(tg.time_group, 'YYYYMMDDHH24MISS') AS time_group,
+      t.client_ip,
+      COUNT(*)::int AS total,
+      COUNT(*) FILTER (WHERE t.label = 'fail')::int AS fail,
+      COUNT(*) FILTER (WHERE t.label = 'pass')::int AS pass
+    FROM tg
+    JOIN quality_records t
+      ON date_trunc('second', t.capture_time) = tg.time_group
+    GROUP BY tg.time_group, t.client_ip
+    ORDER BY tg.time_group DESC, t.client_ip
+  `;
+
+  const countGroupsSql = `
+    SELECT COUNT(DISTINCT date_trunc('second', capture_time))::int AS count
+    FROM quality_records
+    ${timeFilterSql}
+  `;
+
+  try {
+    const [{ rows }, { rows: countRows }] = await Promise.all([
+      pool.query(groupsSql, [
+        startTime || null,
+        endTime || null,
+        limit,
+        offset,
+      ]),
+      pool.query(countGroupsSql, [startTime || null, endTime || null]),
+    ]);
+
+    const nested = rows.reduce((acc: any, row: any) => {
+      if (!acc[row.time_group]) acc[row.time_group] = {};
+      acc[row.time_group][row.client_ip] = {
+        total: row.total,
+        fail: row.fail,
+        pass: row.pass,
+      };
+      return acc;
+    }, {});
+
+    const total = countRows.length > 0 ? countRows[0].count : 0;
+
+    return {
+      data: nested,
+      total,
+      page: offset / limit + 1,
+      limit,
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(
+      `Failed to get summarized records grouped by second and IP: ${errorMessage}`
+    );
     throw error;
   }
 }

@@ -1,4 +1,5 @@
 import { Pool } from "pg";
+import type { PoolClient } from "pg";
 import dotenv from "dotenv";
 import { logger } from "../utils/logger";
 
@@ -42,17 +43,17 @@ const poolConfig = {
 const pool = new Pool(poolConfig);
 
 // 连接成功事件
-pool.on("connect", (client) => {
+pool.on("connect", (client: PoolClient) => {
   logger.info(`✅ PostgreSQL连接池新连接建立 (总连接: ${pool.totalCount})`);
 });
 
 // 连接移除事件
-pool.on("remove", (client) => {
+pool.on("remove", (client: PoolClient) => {
   logger.info(`🔌 PostgreSQL连接从池中移除 (剩余连接: ${pool.totalCount})`);
 });
 
 // 错误处理 - 改进版本，不直接退出进程
-pool.on("error", (err: PostgreSQLError, client) => {
+pool.on("error", (err: PostgreSQLError, client: PoolClient) => {
   logger.error("🚨 PostgreSQL连接池发生错误:", {
     message: err.message,
     code: err.code,

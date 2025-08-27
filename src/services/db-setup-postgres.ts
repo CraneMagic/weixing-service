@@ -177,6 +177,19 @@ export async function initializePostgresDB(): Promise<void> {
         column: "(SUBSTRING(timestamp, 1, 14), client_ip)",
         sql: "CREATE INDEX IF NOT EXISTS idx_quality_records_time_ip_composite ON quality_records(SUBSTRING(timestamp, 1, 14), client_ip)",
       },
+      // 新增：基于 capture_time 的二级索引与复合索引，匹配 date_trunc('second', capture_time)
+      {
+        name: "idx_quality_records_capture_time_trunc_second",
+        table: "quality_records",
+        column: "(date_trunc('second', capture_time))",
+        sql: "CREATE INDEX IF NOT EXISTS idx_quality_records_capture_time_trunc_second ON quality_records(date_trunc('second', capture_time))",
+      },
+      {
+        name: "idx_quality_records_capture_time_trunc_second_ip",
+        table: "quality_records",
+        column: "(date_trunc('second', capture_time), client_ip)",
+        sql: "CREATE INDEX IF NOT EXISTS idx_quality_records_capture_time_trunc_second_ip ON quality_records(date_trunc('second', capture_time), client_ip)",
+      },
     ];
 
     for (const index of indexes) {
@@ -208,7 +221,9 @@ export async function initializePostgresDB(): Promise<void> {
       AND table_name IN ('measurements', 'quality_records')
     `);
 
-    const createdTables = tablesResult.rows.map((row) => row.table_name);
+    const createdTables = tablesResult.rows.map(
+      (row: any) => row.table_name as string
+    );
     logger.info(`📋 已创建的表: ${createdTables.join(", ")}`);
 
     if (

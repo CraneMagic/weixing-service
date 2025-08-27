@@ -197,15 +197,30 @@ export async function getQualityRecordsStatsBySecond(
   res: Response
 ) {
   try {
-    const { limit = 60, page = 1 } = req.query;
+    const {
+      limit = 60,
+      page = 1,
+      startTime,
+      endTime,
+      summary,
+    } = req.query as any;
 
     const options = {
       limit: parseInt(limit as string, 10),
       offset:
         (parseInt(page as string, 10) - 1) * parseInt(limit as string, 10),
+      startTime: startTime as string | undefined,
+      endTime: endTime as string | undefined,
     };
 
-    const result = await getQualityRecordsGroupedBySecond(options);
+    // 新增：默认使用高性能摘要接口，除非显式声明 summary=false
+    const useSummary = String(summary ?? "true").toLowerCase() !== "false";
+
+    const result = useSummary
+      ? await (
+          await import("../services/db-postgres")
+        ).getQualityRecordsGroupedBySecondSummary(options)
+      : await getQualityRecordsGroupedBySecond(options);
 
     return res.status(200).json(result);
   } catch (error) {
@@ -320,7 +335,8 @@ export async function getQualityRecordsStatsBySecondAndIp(
       page = 1,
       startTime: startTimeStr,
       endTime: endTimeStr,
-    } = req.query;
+      summary,
+    } = req.query as any;
 
     const options = {
       limit: parseInt(limit as string, 10),
@@ -330,7 +346,15 @@ export async function getQualityRecordsStatsBySecondAndIp(
       endTime: endTimeStr as string | undefined,
     };
 
-    const result = await getQualityRecordsGroupedBySecondAndIp(options);
+    // 新增：默认使用高性能摘要接口，除非显式声明 summary=false
+    const useSummary = String(summary ?? "true").toLowerCase() !== "false";
+
+    const result = useSummary
+      ? await (
+          await import("../services/db-postgres")
+        ).getQualityRecordsGroupedBySecondAndIpSummary(options)
+      : await getQualityRecordsGroupedBySecondAndIp(options);
+
     return res.status(200).json(result);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
