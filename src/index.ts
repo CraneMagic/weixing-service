@@ -8,6 +8,7 @@ import { setupSerialRoutes } from "./routes/serial";
 import lightRoutes from "./routes/lightRoutes";
 import measurementRoutes from "./routes/measurementRoutes";
 import qualityRecordRoutes from "./routes/qualityRecordRoutes";
+import relayRoutes from "./routes/relayRoutes";
 import { logger } from "./utils/logger";
 import { initializeDatabase } from "./services/db";
 import { setupCleanupJob } from "./services/cleanup";
@@ -61,6 +62,7 @@ async function startApplication() {
     app.use("/api/device", setupDeviceRoutes());
     app.use("/api/serial", setupSerialRoutes());
     app.use("/api/light", lightRoutes);
+    app.use("/api/relay", relayRoutes);
     app.use("/api/measurements", measurementRoutes);
     app.use("/api/quality-records", qualityRecordRoutes);
 

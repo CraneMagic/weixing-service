@@ -13,7 +13,8 @@ services:
     #   - NODE_ENV=production
     #   - PORT=3000
     #   - DB_PATH=/app/data
-    #   - SERIAL_PORT=COM4
+    #   - ALARM_SERIAL_PORT=COM4
+    #   - RELAY_SERIAL_PORT=COM5
     #   # 可以添加其他环境变量，如数据保留天数等
     #   - DATA_RETENTION_DAYS=90
     #   - CLEANUP_INTERVAL_DAYS=7

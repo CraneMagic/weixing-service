@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { sendHexCommand } from "../services/serial";
+import { sendHexCommand, SerialPortType } from "../services/serial";
 import { logger } from "../utils/logger";
 
 /**
@@ -8,13 +8,13 @@ import { logger } from "../utils/logger";
 export async function setNormalState(req: Request, res: Response) {
   try {
     // 关闭红灯+蜂鸣: A0 07 00 A7
-    await sendHexCommand([0xa0, 0x07, 0x00, 0xa7]);
+    await sendHexCommand([0xa0, 0x07, 0x00, 0xa7], SerialPortType.ALARM);
 
     // 关闭红灯: A0 03 00 A3
-    await sendHexCommand([0xa0, 0x03, 0x00, 0xa3]);
+    await sendHexCommand([0xa0, 0x03, 0x00, 0xa3], SerialPortType.ALARM);
 
     // 打开绿灯: A0 02 01 A3
-    await sendHexCommand([0xa0, 0x02, 0x01, 0xa3]);
+    await sendHexCommand([0xa0, 0x02, 0x01, 0xa3], SerialPortType.ALARM);
 
     logger.info("已切换到正常状态: 绿灯开，红灯关");
 
@@ -39,14 +39,14 @@ export async function setNormalState(req: Request, res: Response) {
 export async function setAlarmState(req: Request, res: Response) {
   try {
     // 关闭绿灯: A0 02 00 A2
-    await sendHexCommand([0xa0, 0x02, 0x00, 0xa2]);
+    await sendHexCommand([0xa0, 0x02, 0x00, 0xa2], SerialPortType.ALARM);
 
     if (process.env.ALARM_WITH_SOUND !== "true") {
       // 打开红灯: A0 03 01 A4
-      await sendHexCommand([0xa0, 0x03, 0x01, 0xa4]);
+      await sendHexCommand([0xa0, 0x03, 0x01, 0xa4], SerialPortType.ALARM);
     } else {
       // 打开红灯+蜂鸣: A0 07 01 A8
-      await sendHexCommand([0xa0, 0x07, 0x01, 0xa8]);
+      await sendHexCommand([0xa0, 0x07, 0x01, 0xa8], SerialPortType.ALARM);
     }
 
     logger.info("已切换到报警状态: 红灯开，绿灯关");
@@ -72,7 +72,7 @@ export async function setAlarmState(req: Request, res: Response) {
 export async function turnOffAllLights(req: Request, res: Response) {
   try {
     // 关闭全部: A0 00 00 A0
-    await sendHexCommand([0xa0, 0x00, 0x00, 0xa0]);
+    await sendHexCommand([0xa0, 0x00, 0x00, 0xa0], SerialPortType.ALARM);
 
     logger.info("已关闭所有指示灯");
 
