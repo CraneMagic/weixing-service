@@ -5,13 +5,17 @@ import {
   getCameraPowerStatus as sendCameraPowerStatusCommand,
   getCameraPowerStatusWithResponse,
   getSerialStatus,
+  initializeSerialPort,
+  sendHexCommand,
+  testQueryCommand,
+  testDeviceQuerySupport,
   SerialPortType,
 } from "../services/serial";
 import { logger } from "../utils/logger";
 
 /**
  * 关闭相机供电
- * 发送命令: A0 01 00 A1
+ * 发送命令: A0 01 01 A2 (打开继电器，相机断电)
  */
 export async function turnOffCameraPowerEndpoint(req: Request, res: Response) {
   try {
@@ -22,7 +26,7 @@ export async function turnOffCameraPowerEndpoint(req: Request, res: Response) {
       return res.status(200).json({
         success: true,
         message: "相机供电已关闭",
-        command: "A0 01 00 A1",
+        command: "A0 01 01 A2",
       });
     } else {
       return res.status(500).json({
@@ -43,7 +47,7 @@ export async function turnOffCameraPowerEndpoint(req: Request, res: Response) {
 
 /**
  * 打开相机供电
- * 发送命令: A0 01 01 A2
+ * 发送命令: A0 01 00 A1 (关闭继电器，相机通电)
  */
 export async function turnOnCameraPowerEndpoint(req: Request, res: Response) {
   try {
@@ -54,7 +58,7 @@ export async function turnOnCameraPowerEndpoint(req: Request, res: Response) {
       return res.status(200).json({
         success: true,
         message: "相机供电已打开",
-        command: "A0 01 01 A2",
+        command: "A0 01 00 A1",
       });
     } else {
       return res.status(500).json({
@@ -118,7 +122,7 @@ export async function getCameraPowerStatusWithResponseEndpoint(
   res: Response
 ) {
   try {
-    const timeout = parseInt(req.query.timeout as string) || 5000;
+    const timeout = parseInt(req.query.timeout as string) || 15000;
     const status = await getCameraPowerStatusWithResponse(timeout);
 
     logger.info(`相机供电状态查询完成: ${status ? "开启" : "关闭"}`);
@@ -142,30 +146,30 @@ export async function getCameraPowerStatusWithResponseEndpoint(
 }
 
 /**
- * 获取相机供电状态（带响应等待）
- * 发送命令: A0 01 05 A6 并等待响应
+ * 获取相机供电状态（设备不支持查询，返回未知状态）
  */
 export async function getCameraPowerStatus(req: Request, res: Response) {
   try {
-    const timeout = parseInt(req.query.timeout as string) || 5000;
-    const status = await getCameraPowerStatusWithResponse(timeout);
+    logger.info("设备不支持状态查询功能，返回未知状态");
 
-    logger.info(`相机供电状态查询完成: ${status ? "开启" : "关闭"}`);
     return res.status(200).json({
       success: true,
-      message: "相机供电状态查询完成",
-      command: "A0 01 05 A6",
-      status: status,
-      statusText: status ? "开启" : "关闭",
-      timeout: timeout,
+      message: "设备不支持状态查询功能",
+      status: null,
+      statusText: "未知",
+      note: "此设备只支持开关控制，不支持状态查询。请通过开关操作来控制相机供电。",
+      supportedOperations: [
+        "POST /api/relay/camera-power/on - 打开相机供电",
+        "POST /api/relay/camera-power/off - 关闭相机供电",
+      ],
     });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    logger.error(`查询相机供电状态失败: ${errorMessage}`);
+    logger.error(`获取相机供电状态失败: ${errorMessage}`);
 
     return res.status(500).json({
       success: false,
-      message: `查询相机供电状态失败: ${errorMessage}`,
+      message: `获取相机供电状态失败: ${errorMessage}`,
     });
   }
 }
@@ -191,6 +195,158 @@ export async function getRelaySerialStatus(req: Request, res: Response) {
     return res.status(500).json({
       success: false,
       message: `获取继电器串口状态失败: ${errorMessage}`,
+    });
+  }
+}
+
+/**
+ * 测试继电器串口连接
+ */
+export async function testRelayConnection(req: Request, res: Response) {
+  try {
+    logger.info("开始测试继电器串口连接...");
+
+    // 检查串口状态
+    const status = getSerialStatus(SerialPortType.RELAY);
+    if (!status.isOpen) {
+      logger.warn("继电器串口未连接，尝试初始化...");
+      const initResult = await initializeSerialPort(SerialPortType.RELAY);
+      if (!initResult) {
+        return res.status(500).json({
+          success: false,
+          message: "继电器串口初始化失败",
+          data: {
+            portType: SerialPortType.RELAY,
+            isOpen: false,
+            error: "串口初始化失败",
+          },
+        });
+      }
+    }
+
+    // 发送一个简单的查询命令测试连接
+    const command = [0xa0, 0x01, 0x05, 0xa6];
+    logger.info(
+      `发送测试命令: ${command
+        .map((b) => b.toString(16).padStart(2, "0").toUpperCase())
+        .join(" ")}`
+    );
+
+    const result = await sendHexCommand(command, SerialPortType.RELAY);
+
+    if (result) {
+      logger.info("继电器串口连接测试成功");
+      return res.status(200).json({
+        success: true,
+        message: "继电器串口连接正常",
+        data: {
+          portType: SerialPortType.RELAY,
+          isOpen: true,
+          port: status.port,
+          baudRate: status.baudRate,
+          testCommand: "A0 01 05 A6",
+        },
+      });
+    } else {
+      return res.status(500).json({
+        success: false,
+        message: "继电器串口命令发送失败",
+        data: {
+          portType: SerialPortType.RELAY,
+          isOpen: status.isOpen,
+          port: status.port,
+          baudRate: status.baudRate,
+        },
+      });
+    }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`测试继电器串口连接失败: ${errorMessage}`);
+
+    return res.status(500).json({
+      success: false,
+      message: `测试继电器串口连接失败: ${errorMessage}`,
+    });
+  }
+}
+
+/**
+ * 测试不同的查询命令
+ */
+export async function testQueryCommandEndpoint(req: Request, res: Response) {
+  try {
+    const { commandType } = req.query;
+    const type = (commandType as string) || "status";
+
+    logger.info(`开始测试查询命令: ${type}`);
+
+    const result = await testQueryCommand(type);
+
+    if (result) {
+      logger.info(`测试查询命令 ${type} 发送成功`);
+      return res.status(200).json({
+        success: true,
+        message: `测试查询命令 ${type} 发送成功`,
+        commandType: type,
+        note: "请查看日志中的详细命令信息和可能的响应",
+      });
+    } else {
+      return res.status(500).json({
+        success: false,
+        message: `测试查询命令 ${type} 发送失败`,
+        commandType: type,
+      });
+    }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`测试查询命令失败: ${errorMessage}`);
+
+    return res.status(500).json({
+      success: false,
+      message: `测试查询命令失败: ${errorMessage}`,
+    });
+  }
+}
+
+/**
+ * 测试设备是否支持状态查询
+ */
+export async function testDeviceQuerySupportEndpoint(
+  req: Request,
+  res: Response
+) {
+  try {
+    logger.info("开始测试设备查询支持...");
+
+    const result = await testDeviceQuerySupport();
+
+    logger.info(
+      `设备查询支持测试完成: ${result.supportsQuery ? "支持" : "不支持"}`
+    );
+    logger.info(`收到响应数据: ${result.responseData.length} 条`);
+
+    return res.status(200).json({
+      success: true,
+      message: "设备查询支持测试完成",
+      data: {
+        supportsQuery: result.supportsQuery,
+        responseCount: result.responseData.length,
+        responseData: result.responseData,
+        testResults: result.testResults,
+        summary: {
+          totalCommands: result.testResults.length,
+          successfulCommands: result.testResults.filter((r) => r.sent).length,
+          responsesReceived: result.responseData.length,
+        },
+      },
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`测试设备查询支持失败: ${errorMessage}`);
+
+    return res.status(500).json({
+      success: false,
+      message: `测试设备查询支持失败: ${errorMessage}`,
     });
   }
 }

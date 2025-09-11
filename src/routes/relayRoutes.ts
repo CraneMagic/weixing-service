@@ -4,6 +4,9 @@ import {
   turnOnCameraPowerEndpoint,
   getCameraPowerStatus,
   getRelaySerialStatus,
+  testRelayConnection,
+  testQueryCommandEndpoint,
+  testDeviceQuerySupportEndpoint,
 } from "../controllers/relayController";
 
 const router = Router();
@@ -19,5 +22,14 @@ router.get("/camera-power/status", getCameraPowerStatus);
 
 // 获取继电器串口连接状态
 router.get("/status", getRelaySerialStatus);
+
+// 测试继电器串口连接
+router.get("/test-connection", testRelayConnection);
+
+// 测试不同的查询命令
+router.get("/test-query", testQueryCommandEndpoint);
+
+// 测试设备是否支持状态查询
+router.get("/test-device-support", testDeviceQuerySupportEndpoint);
 
 export default router;
