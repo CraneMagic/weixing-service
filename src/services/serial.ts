@@ -16,6 +16,9 @@ const serialEventEmitter = new EventEmitter();
 const serialPorts: Map<SerialPortType, SerialPort> = new Map();
 const parsers: Map<SerialPortType, ReadlineParser> = new Map();
 
+// 相机供电状态响应监听
+let cameraPowerStatusCallback: ((status: boolean) => void) | null = null;
+
 /**
  * 获取串口配置
  */
@@ -91,6 +94,11 @@ export async function initializeSerialPort(
     parser.on("data", (data: string) => {
       logger.debug(`收到${portType}串口数据: ${data}`);
       serialEventEmitter.emit("data", data, portType);
+
+      // 解析相机供电状态响应
+      if (portType === SerialPortType.RELAY) {
+        parseCameraPowerStatus(data);
+      }
     });
 
     // 打开串口
@@ -318,10 +326,86 @@ export async function turnOnCameraPower(): Promise<boolean> {
 }
 
 /**
- * 查询相机供电状态
+ * 解析相机供电状态响应
+ * @param data 串口返回的数据
+ */
+function parseCameraPowerStatus(data: string): void {
+  try {
+    // 清理数据，移除空格和换行符
+    const cleanData = data.trim().replace(/\s+/g, "");
+
+    // 检查是否是相机供电状态响应
+    // 返回格式: A0 01 00 A1 (关闭) 或 A0 01 01 A2 (开启)
+    if (cleanData.length >= 8 && cleanData.startsWith("A0")) {
+      const statusByte = cleanData.substring(4, 6); // 第3个字节表示状态
+
+      if (statusByte === "01") {
+        logger.info("相机供电状态: 开启 (A0 01 01 A2)");
+        if (cameraPowerStatusCallback) {
+          cameraPowerStatusCallback(true);
+          cameraPowerStatusCallback = null; // 清除回调
+        }
+      } else if (statusByte === "00") {
+        logger.info("相机供电状态: 关闭 (A0 01 00 A1)");
+        if (cameraPowerStatusCallback) {
+          cameraPowerStatusCallback(false);
+          cameraPowerStatusCallback = null; // 清除回调
+        }
+      } else {
+        logger.debug(`收到未知状态响应: ${cleanData}, 状态字节: ${statusByte}`);
+      }
+    } else {
+      logger.debug(`收到非相机供电状态响应: ${cleanData}`);
+    }
+  } catch (error) {
+    logger.error(`解析相机供电状态失败: ${error}`);
+  }
+}
+
+/**
+ * 查询相机供电状态（仅发送命令）
  * 发送命令: A0 01 05 A6
  */
 export async function getCameraPowerStatus(): Promise<boolean> {
   const command = [0xa0, 0x01, 0x05, 0xa6];
   return await sendHexCommand(command, SerialPortType.RELAY);
+}
+
+/**
+ * 查询相机供电状态（带响应等待）
+ * 发送命令: A0 01 05 A6 并等待响应
+ * @param timeout 超时时间（毫秒），默认5000ms
+ */
+export async function getCameraPowerStatusWithResponse(
+  timeout: number = 5000
+): Promise<boolean> {
+  return new Promise(async (resolve, reject) => {
+    try {
+      // 设置回调函数
+      cameraPowerStatusCallback = (status: boolean) => {
+        resolve(status);
+      };
+
+      // 发送查询命令
+      const command = [0xa0, 0x01, 0x05, 0xa6];
+      const result = await sendHexCommand(command, SerialPortType.RELAY);
+
+      if (!result) {
+        cameraPowerStatusCallback = null;
+        reject(new Error("发送查询命令失败"));
+        return;
+      }
+
+      // 设置超时
+      setTimeout(() => {
+        if (cameraPowerStatusCallback) {
+          cameraPowerStatusCallback = null;
+          reject(new Error("查询相机供电状态超时"));
+        }
+      }, timeout);
+    } catch (error) {
+      cameraPowerStatusCallback = null;
+      reject(error);
+    }
+  });
 }

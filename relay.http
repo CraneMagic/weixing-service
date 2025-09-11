@@ -10,9 +10,13 @@ Content-Type: application/json
 POST http://localhost:3000/api/relay/camera-power/on
 Content-Type: application/json
 
-### 3. 查询相机供电状态
-### 发送命令: A0 01 05 A6
+### 3. 查询相机供电状态（带响应等待）
+### 发送命令: A0 01 05 A6 并等待响应
 GET http://localhost:3000/api/relay/camera-power/status
 
-### 4. 获取继电器串口状态
+### 4. 查询相机供电状态（带自定义超时时间）
+### 发送命令: A0 01 05 A6 并等待响应，超时时间10秒
+GET http://localhost:3000/api/relay/camera-power/status?timeout=10000
+
+### 5. 获取继电器串口连接状态
 GET http://localhost:3000/api/relay/status
