@@ -63,7 +63,8 @@ export async function initializePostgresDB(): Promise<void> {
         calibration_type TEXT,
         calibration_index INTEGER,
         corrected_data JSONB,
-        calculated_data JSONB
+        calculated_data JSONB,
+        pc_num TEXT,
       )
     `);
     logger.info("✅ measurements 表创建完成");
@@ -73,6 +74,7 @@ export async function initializePostgresDB(): Promise<void> {
       { name: "is_calibration", type: "INTEGER" },
       { name: "calibration_type", type: "TEXT" },
       { name: "calibration_index", type: "INTEGER" },
+      { name: "pc_num", type: "TEXT" }
     ];
 
     for (const col of newColumns) {
