@@ -79,6 +79,38 @@ Content-Type: application/json
   }
 ]
 
+### Create quality record with new fields
+POST http://localhost:3000/api/quality-records
+Content-Type: application/json
+
+{
+  "client_ip": "192.168.1.100",
+  "timestamp": "20250612100000123456",
+  "label": "fail",
+  "confidence": 0.95,
+  "object_key": "2024/12/25/14/30/test_001.jpg",
+  "error_path": "error/fail/2024/12/25/14/30/test_001.jpg",
+  "oss_path": "weixing/error/fail/images/2024/12/25/14/30/test_001.jpg",
+  "model_type": "yolo_v8",
+  "pc_num": "PC-001",
+  "image": "base64_encoded_image_data"
+}
+
+### Create quality record with pass label (no error_path)
+POST http://localhost:3000/api/quality-records
+Content-Type: application/json
+
+{
+  "client_ip": "192.168.1.101",
+  "timestamp": "20250612100000234567",
+  "label": "pass",
+  "confidence": 0.98,
+  "object_key": "2024/12/25/14/31/test_002.jpg",
+  "oss_path": "weixing/pass/images/2024/12/25/14/31/test_002.jpg",
+  "model_type": "yolo_v8",
+  "pc_num": "PC-002"
+}
+
 ### Get an image by its filename (object_key)
 # @name getImage
 # NOTE: Replace the filename with a real one from your database's object_key field

@@ -21,4 +21,7 @@ export interface QualityRecord {
   object_key?: string;
   status?: string;
   pc_num?: string;
+  // 新增字段
+  error_path?: string | null;
+  oss_path?: string | null;
 }

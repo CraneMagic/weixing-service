@@ -74,7 +74,7 @@ export async function initializePostgresDB(): Promise<void> {
       { name: "is_calibration", type: "INTEGER" },
       { name: "calibration_type", type: "TEXT" },
       { name: "calibration_index", type: "INTEGER" },
-      { name: "pc_num", type: "TEXT" }
+      { name: "pc_num", type: "TEXT" },
     ];
 
     for (const col of newColumns) {
@@ -118,10 +118,33 @@ export async function initializePostgresDB(): Promise<void> {
         object_key TEXT,
         status TEXT,
         pc_num TEXT,
+        error_path TEXT,
+        oss_path TEXT,
         PRIMARY KEY (client_ip, timestamp)
       )
     `);
     logger.info("✅ quality_records 表创建完成");
+
+    // 确保新增列存在（用于已存在的表）
+    const newQualityColumns = [
+      { name: "error_path", type: "TEXT" },
+      { name: "oss_path", type: "TEXT" },
+    ];
+
+    for (const col of newQualityColumns) {
+      try {
+        await client.query(
+          `ALTER TABLE quality_records ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`
+        );
+        logger.debug(`  ✓ 列 ${col.name} 已存在或创建成功`);
+      } catch (error) {
+        logger.warn(
+          `  ⚠️ 列 ${col.name} 创建失败: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+      }
+    }
 
     // 创建索引
     logger.info("🔗 创建索引...");
