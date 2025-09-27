@@ -1065,6 +1065,282 @@ export async function updateStatusFromFailToInReview(
 }
 
 /**
+ * 更新审核结果
+ */
+export async function updateReviewResult(
+  client_ip: string,
+  timestamp: string,
+  reviewData: {
+    review_result: string;
+    reviewer: string;
+    review_notes?: string;
+  }
+): Promise<{ updated: number }> {
+  const sql = `
+    UPDATE quality_records 
+    SET 
+      review_result = $1,
+      review_time = NOW(),
+      reviewer = $2,
+      review_notes = $3
+    WHERE client_ip = $4 AND timestamp = $5
+  `;
+
+  try {
+    const result = await pool.query(sql, [
+      reviewData.review_result,
+      reviewData.reviewer,
+      reviewData.review_notes || null,
+      client_ip,
+      timestamp,
+    ]);
+
+    const updated = result.rowCount || 0;
+    logger.info(
+      `Updated review result for record ${client_ip}/${timestamp}: ${reviewData.review_result}`
+    );
+    return { updated };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(
+      `Failed to update review result for ${client_ip}/${timestamp}: ${errorMessage}`
+    );
+    throw error;
+  }
+}
+
+/**
+ * 批量更新审核结果
+ */
+export async function batchUpdateReviewResult(
+  records: Array<{
+    client_ip: string;
+    timestamp: string;
+    review_result: string;
+    reviewer: string;
+    review_notes?: string;
+  }>
+): Promise<{ updated: number; failed: number }> {
+  let updatedCount = 0;
+  let failedCount = 0;
+
+  for (const record of records) {
+    try {
+      const result = await updateReviewResult(
+        record.client_ip,
+        record.timestamp,
+        {
+          review_result: record.review_result,
+          reviewer: record.reviewer,
+          review_notes: record.review_notes,
+        }
+      );
+      updatedCount += result.updated;
+    } catch (error) {
+      failedCount++;
+      logger.error(
+        `Failed to update review for ${record.client_ip}/${record.timestamp}`
+      );
+    }
+  }
+
+  return { updated: updatedCount, failed: failedCount };
+}
+
+/**
+ * 获取误报率统计（按天）
+ */
+export async function getFalsePositiveRateStats(options: {
+  startTime?: string;
+  endTime?: string;
+  groupBy?: "day" | "week" | "month";
+}): Promise<{
+  data: Array<{
+    date: string;
+    total_reviewed: number;
+    confirmed_fail: number;
+    false_positive: number;
+    unclear: number;
+    false_positive_rate: number;
+  }>;
+  summary: {
+    total_reviewed: number;
+    confirmed_fail: number;
+    false_positive: number;
+    unclear: number;
+    false_positive_rate: number;
+  };
+}> {
+  const { startTime, endTime, groupBy = "day" } = options;
+
+  let dateFormat: string;
+  let dateTrunc: string;
+
+  switch (groupBy) {
+    case "week":
+      dateFormat = 'YYYY-"W"WW';
+      dateTrunc = "week";
+      break;
+    case "month":
+      dateFormat = "YYYY-MM";
+      dateTrunc = "month";
+      break;
+    default:
+      dateFormat = "YYYY-MM-DD";
+      dateTrunc = "day";
+  }
+
+  const timeFilterSql = `
+    WHERE review_result IS NOT NULL
+      AND ($1::timestamptz IS NULL OR review_time >= $1)
+      AND ($2::timestamptz IS NULL OR review_time <= $2)
+  `;
+
+  const statsSql = `
+    SELECT 
+      to_char(date_trunc('${dateTrunc}', review_time), '${dateFormat}') AS date,
+      COUNT(*)::int AS total_reviewed,
+      COUNT(*) FILTER (WHERE review_result = 'fail')::int AS confirmed_fail,
+      COUNT(*) FILTER (WHERE review_result = 'pass')::int AS false_positive,
+      COUNT(*) FILTER (WHERE review_result = 'unclear')::int AS unclear,
+      ROUND(
+        COUNT(*) FILTER (WHERE review_result = 'pass')::numeric / 
+        NULLIF(COUNT(*) FILTER (WHERE review_result IN ('pass', 'fail')), 0) * 100, 
+        2
+      ) AS false_positive_rate
+    FROM quality_records
+    ${timeFilterSql}
+    GROUP BY date_trunc('${dateTrunc}', review_time)
+    ORDER BY date_trunc('${dateTrunc}', review_time) DESC
+  `;
+
+  const summarySql = `
+    SELECT 
+      COUNT(*)::int AS total_reviewed,
+      COUNT(*) FILTER (WHERE review_result = 'fail')::int AS confirmed_fail,
+      COUNT(*) FILTER (WHERE review_result = 'pass')::int AS false_positive,
+      COUNT(*) FILTER (WHERE review_result = 'unclear')::int AS unclear,
+      ROUND(
+        COUNT(*) FILTER (WHERE review_result = 'pass')::numeric / 
+        NULLIF(COUNT(*) FILTER (WHERE review_result IN ('pass', 'fail')), 0) * 100, 
+        2
+      ) AS false_positive_rate
+    FROM quality_records
+    ${timeFilterSql}
+  `;
+
+  try {
+    const [{ rows }, { rows: summaryRows }] = await Promise.all([
+      pool.query(statsSql, [startTime || null, endTime || null]),
+      pool.query(summarySql, [startTime || null, endTime || null]),
+    ]);
+
+    return {
+      data: rows,
+      summary: summaryRows[0] || {
+        total_reviewed: 0,
+        confirmed_fail: 0,
+        false_positive: 0,
+        unclear: 0,
+        false_positive_rate: 0,
+      },
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`Failed to get false positive rate stats: ${errorMessage}`);
+    throw error;
+  }
+}
+
+/**
+ * 获取待审核记录
+ */
+export async function getPendingReviewRecords(options: {
+  limit?: number;
+  offset?: number;
+  startTime?: string;
+  endTime?: string;
+  client_ip?: string;
+  pc_num?: string;
+}): Promise<{
+  data: QualityRecord[];
+  total: number;
+  page: number;
+  limit: number;
+}> {
+  const {
+    limit = 20,
+    offset = 0,
+    startTime,
+    endTime,
+    client_ip,
+    pc_num,
+  } = options;
+
+  const params: any[] = [];
+  const conditions: string[] = [];
+  let paramIndex = 1;
+
+  // 只查询 fail 标签且未审核的记录
+  conditions.push(`label = 'fail'`);
+  conditions.push(`review_result IS NULL`);
+
+  if (startTime) {
+    conditions.push(`capture_time >= $${paramIndex++}`);
+    params.push(startTime);
+  }
+  if (endTime) {
+    conditions.push(`capture_time <= $${paramIndex++}`);
+    params.push(endTime);
+  }
+  if (client_ip) {
+    conditions.push(`client_ip = $${paramIndex++}`);
+    params.push(client_ip);
+  }
+  if (pc_num) {
+    conditions.push(`pc_num = $${paramIndex++}`);
+    params.push(pc_num);
+  }
+
+  const whereClause =
+    conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+
+  const query = `
+    SELECT * FROM quality_records
+    ${whereClause}
+    ORDER BY capture_time DESC
+    LIMIT $${paramIndex++} OFFSET $${paramIndex++}
+  `;
+
+  const countQuery = `
+    SELECT COUNT(*) as total FROM quality_records
+    ${whereClause}
+  `;
+
+  params.push(limit, offset);
+
+  try {
+    const [{ rows }, { rows: countRows }] = await Promise.all([
+      pool.query(query, params),
+      pool.query(countQuery, params.slice(0, -2)), // 移除 limit 和 offset
+    ]);
+
+    const total = countRows.length > 0 ? parseInt(countRows[0].total) : 0;
+
+    return {
+      data: rows,
+      total,
+      page: Math.floor(offset / limit) + 1,
+      limit,
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`Failed to get pending review records: ${errorMessage}`);
+    throw error;
+  }
+}
+
+/**
  * 根据保留策略，获取需要被清理的图片文件名
  * - 'fail' 标签的图片保留7天
  * - 其他所有标签 (包括 'pass' 和 null) 的图片保留1天

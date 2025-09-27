@@ -120,6 +120,10 @@ export async function initializePostgresDB(): Promise<void> {
         pc_num TEXT,
         error_path TEXT,
         oss_path TEXT,
+        review_result TEXT,
+        review_time TIMESTAMPTZ,
+        reviewer TEXT,
+        review_notes TEXT,
         PRIMARY KEY (client_ip, timestamp)
       )
     `);
@@ -129,6 +133,10 @@ export async function initializePostgresDB(): Promise<void> {
     const newQualityColumns = [
       { name: "error_path", type: "TEXT" },
       { name: "oss_path", type: "TEXT" },
+      { name: "review_result", type: "TEXT" },
+      { name: "review_time", type: "TIMESTAMPTZ" },
+      { name: "reviewer", type: "TEXT" },
+      { name: "review_notes", type: "TEXT" },
     ];
 
     for (const col of newQualityColumns) {

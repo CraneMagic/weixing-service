@@ -15,6 +15,10 @@ import {
   triggerEmergencyCleanup,
   checkAndAutoClean,
   triggerRegularCleanup,
+  updateReviewResult,
+  batchUpdateReviewResult,
+  getPendingReviewRecords,
+  getFalsePositiveRateStats,
 } from "../controllers/qualityRecordController";
 import { Request, Response } from "express";
 import { checkPoolHealth } from "../services/pg-pool";
@@ -63,6 +67,12 @@ router.put("/:client_ip/:timestamp", updateQualityRecord);
 
 // 删除质量检测记录
 router.delete("/:client_ip/:timestamp", deleteQualityRecord);
+
+// 审核相关路由
+router.get("/pending-review", getPendingReviewRecords);
+router.put("/:client_ip/:timestamp/review", updateReviewResult);
+router.post("/batch-review", batchUpdateReviewResult);
+router.get("/stats/false-positive-rate", getFalsePositiveRateStats);
 
 // 添加连接池状态监控端点
 router.get("/pool-status", async (req: Request, res: Response) => {

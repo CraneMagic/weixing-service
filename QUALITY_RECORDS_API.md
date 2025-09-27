@@ -331,6 +331,92 @@ curl -X POST http://localhost:3000/api/quality-records/update-status/fail-to-inr
   ]'
 ```
 
+## 审核功能
+
+### 审核结果类型
+
+- **`pass`**: 合格（无瑕疵）- 表示 AI 检测为 fail 但实际是误报
+- **`fail`**: 不合格（有瑕疵）- 表示 AI 检测正确，确实有瑕疵
+- **`unclear`**: 无法判断 - 表示图片质量或角度问题无法确定
+
+### 审核相关接口
+
+#### 获取待审核记录
+
+```http
+GET /api/quality-records/pending-review?page=1&limit=20&startTime=2024-01-01T00:00:00Z&endTime=2024-01-01T23:59:59Z&client_ip=192.168.1.100&pc_num=PC-001
+```
+
+#### 更新单条记录审核结果
+
+```http
+PUT /api/quality-records/{client_ip}/{timestamp}/review
+Content-Type: application/json
+
+{
+  "review_result": "pass",  // pass/fail/unclear
+  "reviewer": "admin",
+  "review_notes": "审核备注"
+}
+```
+
+#### 批量更新审核结果
+
+```http
+POST /api/quality-records/batch-review
+Content-Type: application/json
+
+{
+  "records": [
+    {
+      "client_ip": "192.168.1.100",
+      "timestamp": "20250612100000123456",
+      "review_result": "pass"
+    }
+  ],
+  "reviewer": "admin",
+  "review_notes": "批量审核备注"
+}
+```
+
+#### 获取误报率统计
+
+```http
+GET /api/quality-records/stats/false-positive-rate?startTime=2024-01-01T00:00:00Z&endTime=2024-01-31T23:59:59Z&groupBy=day
+```
+
+**响应格式：**
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "date": "2024-01-01",
+      "total_reviewed": 100,
+      "confirmed_fail": 85,
+      "false_positive": 15,
+      "unclear": 0,
+      "false_positive_rate": 15.0
+    }
+  ],
+  "summary": {
+    "total_reviewed": 1000,
+    "confirmed_fail": 850,
+    "false_positive": 150,
+    "unclear": 0,
+    "false_positive_rate": 15.0
+  }
+}
+```
+
+### 误报率计算规则
+
+- **误报率** = `false_positive` / (`confirmed_fail` + `false_positive`) \* 100%
+- 只统计已审核的记录（`review_result` 不为 NULL）
+- `unclear` 记录不参与误报率计算
+- 支持按天、周、月分组统计
+
 ## 注意事项
 
 1. **向后兼容性**: 新字段为可选字段，不影响现有 API 调用
@@ -339,6 +425,7 @@ curl -X POST http://localhost:3000/api/quality-records/update-status/fail-to-inr
 4. **批量操作**: 批量创建限制最大 100 条记录
 5. **状态管理**: 系统会根据 label 自动设置初始状态
 6. **存储清理**: 定期清理过期图片文件，释放磁盘空间
+7. **审核功能**: 支持三种审核结果，误报率只统计已审核记录
 
 ## 错误处理
 

@@ -115,3 +115,42 @@ Content-Type: application/json
 # @name getImage
 # NOTE: Replace the filename with a real one from your database's object_key field
 GET http://localhost:3000/api/quality-records/images/192.168.1.119_20250613001750616992.jpg
+
+### Review APIs
+
+### Get pending review records
+GET http://localhost:3000/api/quality-records/pending-review?page=1&limit=20&startTime=2024-01-01T00:00:00Z&endTime=2024-01-01T23:59:59Z
+
+### Update single record review result
+PUT http://localhost:3000/api/quality-records/192.168.1.100/20250612100000123456/review
+Content-Type: application/json
+
+{
+  "review_result": "pass",
+  "reviewer": "admin",
+  "review_notes": "确认是误报，图片质量正常"
+}
+
+### Batch update review results
+POST http://localhost:3000/api/quality-records/batch-review
+Content-Type: application/json
+
+{
+  "records": [
+    {
+      "client_ip": "192.168.1.100",
+      "timestamp": "20250612100000123456",
+      "review_result": "pass"
+    },
+    {
+      "client_ip": "192.168.1.101",
+      "timestamp": "20250612100000234567",
+      "review_result": "fail"
+    }
+  ],
+  "reviewer": "admin",
+  "review_notes": "批量审核备注"
+}
+
+### Get false positive rate statistics
+GET http://localhost:3000/api/quality-records/stats/false-positive-rate?startTime=2024-01-01T00:00:00Z&endTime=2024-01-31T23:59:59Z&groupBy=day

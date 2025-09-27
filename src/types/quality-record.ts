@@ -24,4 +24,9 @@ export interface QualityRecord {
   // 新增字段
   error_path?: string | null;
   oss_path?: string | null;
+  // 审核相关字段
+  review_result?: string; // pass/fail/unclear
+  review_time?: string; // 审核时间
+  reviewer?: string; // 审核人
+  review_notes?: string; // 审核备注
 }

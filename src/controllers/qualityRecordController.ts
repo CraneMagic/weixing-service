@@ -11,6 +11,10 @@ import {
   getQualityRecordsGroupedBySecondAndIp,
   updateStatusFromPassToIgnored as updatePassService,
   updateStatusFromFailToInReview as updateFailService,
+  updateReviewResult,
+  batchUpdateReviewResult,
+  getFalsePositiveRateStats,
+  getPendingReviewRecords,
 } from "../services/db-postgres";
 import {
   getImagePath,
@@ -685,6 +689,204 @@ export async function triggerRegularCleanup(req: Request, res: Response) {
     return res.status(500).json({
       success: false,
       message: `常规清理失败: ${errorMessage}`,
+    });
+  }
+}
+
+/**
+ * 更新单条记录审核结果
+ */
+export async function updateReviewResult(req: Request, res: Response) {
+  try {
+    const { client_ip, timestamp } = req.params;
+    const { review_result, reviewer, review_notes } = req.body;
+
+    if (!client_ip || !timestamp) {
+      return res.status(400).json({
+        success: false,
+        message: "缺少 client_ip 或 timestamp",
+      });
+    }
+
+    if (!review_result || !reviewer) {
+      return res.status(400).json({
+        success: false,
+        message: "缺少 review_result 或 reviewer",
+      });
+    }
+
+    if (!["pass", "fail", "unclear"].includes(review_result)) {
+      return res.status(400).json({
+        success: false,
+        message: "review_result 必须是 pass、fail 或 unclear",
+      });
+    }
+
+    const result = await updateReviewResult(client_ip, timestamp, {
+      review_result,
+      reviewer,
+      review_notes,
+    });
+
+    if (result.updated === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "未找到要更新的质量检测记录",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "审核结果已更新",
+      data: result,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`更新审核结果失败: ${errorMessage}`);
+    return res.status(500).json({
+      success: false,
+      message: `更新失败: ${errorMessage}`,
+    });
+  }
+}
+
+/**
+ * 批量更新审核结果
+ */
+export async function batchUpdateReviewResult(req: Request, res: Response) {
+  try {
+    const { records, reviewer, review_notes } = req.body;
+
+    if (!records || !Array.isArray(records) || records.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "请提供有效的记录数组",
+      });
+    }
+
+    if (!reviewer) {
+      return res.status(400).json({
+        success: false,
+        message: "缺少审核人信息",
+      });
+    }
+
+    // 验证记录格式
+    const invalidRecords: number[] = [];
+    records.forEach((record: any, index: number) => {
+      if (!record.client_ip || !record.timestamp || !record.review_result) {
+        invalidRecords.push(index + 1);
+      }
+      if (!["pass", "fail", "unclear"].includes(record.review_result)) {
+        invalidRecords.push(index + 1);
+      }
+    });
+
+    if (invalidRecords.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `记录 ${invalidRecords.join(", ")} 格式无效`,
+      });
+    }
+
+    // 限制批量大小
+    const MAX_BATCH_SIZE = 100;
+    if (records.length > MAX_BATCH_SIZE) {
+      return res.status(400).json({
+        success: false,
+        message: `批量大小不能超过 ${MAX_BATCH_SIZE} 条记录，当前: ${records.length} 条`,
+      });
+    }
+
+    // 添加审核人信息
+    const recordsWithReviewer = records.map((record: any) => ({
+      ...record,
+      reviewer,
+      review_notes: record.review_notes || review_notes,
+    }));
+
+    const result = await batchUpdateReviewResult(recordsWithReviewer);
+
+    return res.status(200).json({
+      success: true,
+      message: `批量审核完成: 成功 ${result.updated} 条, 失败 ${result.failed} 条`,
+      data: result,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`批量更新审核结果失败: ${errorMessage}`);
+    return res.status(500).json({
+      success: false,
+      message: `批量更新失败: ${errorMessage}`,
+    });
+  }
+}
+
+/**
+ * 获取待审核记录
+ */
+export async function getPendingReviewRecords(req: Request, res: Response) {
+  try {
+    const {
+      limit = 20,
+      page = 1,
+      startTime,
+      endTime,
+      client_ip,
+      pc_num,
+    } = req.query;
+
+    const options = {
+      limit: parseInt(limit as string, 10),
+      offset:
+        (parseInt(page as string, 10) - 1) * parseInt(limit as string, 10),
+      startTime: startTime as string | undefined,
+      endTime: endTime as string | undefined,
+      client_ip: client_ip as string | undefined,
+      pc_num: pc_num as string | undefined,
+    };
+
+    const result = await getPendingReviewRecords(options);
+
+    return res.status(200).json({
+      success: true,
+      ...result,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`获取待审核记录失败: ${errorMessage}`);
+    return res.status(500).json({
+      success: false,
+      message: `获取失败: ${errorMessage}`,
+    });
+  }
+}
+
+/**
+ * 获取误报率统计
+ */
+export async function getFalsePositiveRateStats(req: Request, res: Response) {
+  try {
+    const { startTime, endTime, groupBy = "day" } = req.query;
+
+    const options = {
+      startTime: startTime as string | undefined,
+      endTime: endTime as string | undefined,
+      groupBy: groupBy as "day" | "week" | "month",
+    };
+
+    const result = await getFalsePositiveRateStats(options);
+
+    return res.status(200).json({
+      success: true,
+      ...result,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`获取误报率统计失败: ${errorMessage}`);
+    return res.status(500).json({
+      success: false,
+      message: `获取失败: ${errorMessage}`,
     });
   }
 }
