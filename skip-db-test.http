@@ -1,0 +1,37 @@
+### 跳过数据库验证模式测试
+
+### 1. 健康检查 - 跳过数据库验证模式
+GET http://localhost:3000/health
+Content-Type: application/json
+
+### 2. 测试可用的服务 - 网络扫描
+GET http://localhost:3000/api/network/quick-scan
+Content-Type: application/json
+
+### 3. 测试可用的服务 - 串口通信
+GET http://localhost:3000/api/serial/ports
+Content-Type: application/json
+
+### 4. 测试禁用的服务 - 参数管理
+GET http://localhost:3000/api/parameters
+Content-Type: application/json
+
+### 5. 测试禁用的服务 - 设备管理
+GET http://localhost:3000/api/device
+Content-Type: application/json
+
+### 6. 测试禁用的服务 - 灯光控制
+GET http://localhost:3000/api/light
+Content-Type: application/json
+
+### 7. 测试禁用的服务 - 继电器控制
+GET http://localhost:3000/api/relay
+Content-Type: application/json
+
+### 8. 测试禁用的服务 - 测量数据
+GET http://localhost:3000/api/measurements
+Content-Type: application/json
+
+### 9. 测试禁用的服务 - 质量记录
+GET http://localhost:3000/api/quality-records
+Content-Type: application/json

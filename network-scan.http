@@ -1,0 +1,41 @@
+### 网络扫描 API 测试文件
+
+### 1. 完整网络扫描
+GET http://localhost:3000/api/network/scan
+Content-Type: application/json
+
+### 2. 扫描指定子网
+GET http://localhost:3000/api/network/scan?subnet=192.168.1.0/24
+Content-Type: application/json
+
+### 3. 快速网络扫描
+GET http://localhost:3000/api/network/quick-scan
+Content-Type: application/json
+
+### 4. 获取在线设备
+GET http://localhost:3000/api/network/devices/online
+Content-Type: application/json
+
+### 5. 获取所有设备（包括离线）
+GET http://localhost:3000/api/network/devices/all
+Content-Type: application/json
+
+### 6. 搜索设备 - 按IP
+GET http://localhost:3000/api/network/devices/search?ip=192.168.1
+Content-Type: application/json
+
+### 7. 搜索设备 - 按MAC地址
+GET http://localhost:3000/api/network/devices/search?mac=00:50:56
+Content-Type: application/json
+
+### 8. 搜索设备 - 按主机名
+GET http://localhost:3000/api/network/devices/search?hostname=router
+Content-Type: application/json
+
+### 9. 网络状态检查
+GET http://localhost:3000/api/network/status
+Content-Type: application/json
+
+### 10. 健康检查
+GET http://localhost:3000/health
+Content-Type: application/json

@@ -63,6 +63,49 @@ npm run dev
 # 生产模式
 npm run build
 npm start
+
+# 跳过数据库验证模式（开发）
+npm run dev:no-db
+
+# 跳过数据库验证模式（生产）
+npm run start:no-db
+```
+
+### 启动参数
+
+#### SKIP_DATABASE_VALIDATION
+
+当设置为 `true` 时，应用将跳过数据库连接验证，并禁用所有数据库相关的 API。
+
+**使用场景：**
+
+- 数据库服务不可用时仍需要测试非数据库功能
+- 网络扫描、串口通信等独立功能的开发和测试
+- 数据库维护期间的临时运行
+
+**可用服务：**
+
+- 串口通信 (`/api/serial/*`)
+- 网络扫描 (`/api/network/*`)
+
+**禁用服务：**
+
+- 参数管理 (`/api/parameters/*`)
+- 设备管理 (`/api/device/*`)
+- 灯光控制 (`/api/light/*`)
+- 继电器控制 (`/api/relay/*`)
+- 测量数据 (`/api/measurements/*`)
+- 质量记录 (`/api/quality-records/*`)
+
+**设置方法：**
+
+```bash
+# 环境变量方式
+export SKIP_DATABASE_VALIDATION=true
+npm run dev
+
+# 或使用预配置的脚本
+npm run dev:no-db
 ```
 
 ## API 文档

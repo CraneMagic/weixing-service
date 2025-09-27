@@ -9,6 +9,7 @@ import lightRoutes from "./routes/lightRoutes";
 import measurementRoutes from "./routes/measurementRoutes";
 import qualityRecordRoutes from "./routes/qualityRecordRoutes";
 import relayRoutes from "./routes/relayRoutes";
+import networkScanRoutes from "./routes/networkScanRoutes";
 import { logger } from "./utils/logger";
 import { initializeDatabase } from "./services/db";
 import { setupCleanupJob } from "./services/cleanup";
@@ -20,31 +21,39 @@ import { startSchedulers } from "./scheduler";
 // 加载环境变量
 dotenv.config();
 
+// 检查是否跳过数据库验证
+const skipDatabaseValidation = process.env.SKIP_DATABASE_VALIDATION === "true";
+
 // 初始化应用的主函数
 async function startApplication() {
   try {
     logger.info("🚀 开始初始化应用...");
 
-    // 1. 初始化NeDB数据库
-    logger.info("📁 初始化NeDB数据库...");
-    initializeDatabase();
+    if (skipDatabaseValidation) {
+      logger.warn("⚠️  跳过数据库验证模式已启用");
+      logger.warn("📋 数据库相关API将被禁用");
+    } else {
+      // 1. 初始化NeDB数据库
+      logger.info("📁 初始化NeDB数据库...");
+      initializeDatabase();
 
-    // 2. 初始化PostgreSQL数据库（等待完成）
-    logger.info("🐘 初始化PostgreSQL数据库...");
-    await initializePostgresDB();
-    logger.info("✅ PostgreSQL数据库初始化完成");
+      // 2. 初始化PostgreSQL数据库（等待完成）
+      logger.info("🐘 初始化PostgreSQL数据库...");
+      await initializePostgresDB();
+      logger.info("✅ PostgreSQL数据库初始化完成");
 
-    // 3. 启动定时任务
-    logger.info("⏰ 启动定时任务...");
-    const daysToKeep = parseInt(process.env.DATA_RETENTION_DAYS || "90", 10);
-    const cleanupInterval = parseInt(
-      process.env.CLEANUP_INTERVAL_DAYS || "7",
-      10
-    );
-    setupCleanupJob(daysToKeep, cleanupInterval);
-    initializeScheduler();
-    startSchedulers();
-    logger.info("✅ 定时任务启动完成");
+      // 3. 启动定时任务
+      logger.info("⏰ 启动定时任务...");
+      const daysToKeep = parseInt(process.env.DATA_RETENTION_DAYS || "90", 10);
+      const cleanupInterval = parseInt(
+        process.env.CLEANUP_INTERVAL_DAYS || "7",
+        10
+      );
+      setupCleanupJob(daysToKeep, cleanupInterval);
+      initializeScheduler();
+      startSchedulers();
+      logger.info("✅ 定时任务启动完成");
+    }
 
     // 4. 创建Express应用
     logger.info("🌐 创建Express应用...");
@@ -58,36 +67,131 @@ async function startApplication() {
     app.use(morgan("dev"));
 
     // 路由
-    app.use("/api/parameters", setupParametersRoutes());
-    app.use("/api/device", setupDeviceRoutes());
-    app.use("/api/serial", setupSerialRoutes());
-    app.use("/api/light", lightRoutes);
-    app.use("/api/relay", relayRoutes);
-    app.use("/api/measurements", measurementRoutes);
-    app.use("/api/quality-records", qualityRecordRoutes);
+    if (skipDatabaseValidation) {
+      // 跳过数据库验证时，只注册非数据库相关的路由
+      logger.info("🔌 注册非数据库相关路由...");
+      app.use("/api/serial", setupSerialRoutes());
+      app.use("/api/network", networkScanRoutes);
+
+      // 为数据库相关路由添加禁用提示
+      app.use("/api/parameters", (req, res) => {
+        res.status(503).json({
+          success: false,
+          message: "数据库功能已禁用",
+          error: "SKIP_DATABASE_VALIDATION 模式已启用，数据库相关API不可用",
+        });
+      });
+
+      app.use("/api/device", (req, res) => {
+        res.status(503).json({
+          success: false,
+          message: "数据库功能已禁用",
+          error: "SKIP_DATABASE_VALIDATION 模式已启用，数据库相关API不可用",
+        });
+      });
+
+      app.use("/api/light", (req, res) => {
+        res.status(503).json({
+          success: false,
+          message: "数据库功能已禁用",
+          error: "SKIP_DATABASE_VALIDATION 模式已启用，数据库相关API不可用",
+        });
+      });
+
+      app.use("/api/relay", (req, res) => {
+        res.status(503).json({
+          success: false,
+          message: "数据库功能已禁用",
+          error: "SKIP_DATABASE_VALIDATION 模式已启用，数据库相关API不可用",
+        });
+      });
+
+      app.use("/api/measurements", (req, res) => {
+        res.status(503).json({
+          success: false,
+          message: "数据库功能已禁用",
+          error: "SKIP_DATABASE_VALIDATION 模式已启用，数据库相关API不可用",
+        });
+      });
+
+      app.use("/api/quality-records", (req, res) => {
+        res.status(503).json({
+          success: false,
+          message: "数据库功能已禁用",
+          error: "SKIP_DATABASE_VALIDATION 模式已启用，数据库相关API不可用",
+        });
+      });
+    } else {
+      // 正常模式，注册所有路由
+      logger.info("🔌 注册所有路由...");
+      app.use("/api/parameters", setupParametersRoutes());
+      app.use("/api/device", setupDeviceRoutes());
+      app.use("/api/serial", setupSerialRoutes());
+      app.use("/api/light", lightRoutes);
+      app.use("/api/relay", relayRoutes);
+      app.use("/api/measurements", measurementRoutes);
+      app.use("/api/quality-records", qualityRecordRoutes);
+      app.use("/api/network", networkScanRoutes);
+    }
 
     // 健康检查路由
     app.get("/health", async (req, res) => {
       try {
-        const poolHealth = await checkPoolHealth();
+        if (skipDatabaseValidation) {
+          // 跳过数据库验证模式
+          res.status(200).json({
+            status: "ok",
+            timestamp: new Date().toISOString(),
+            mode: "skip_database_validation",
+            database: {
+              healthy: false,
+              status: "disabled",
+              message: "数据库验证已跳过",
+            },
+            availableServices: ["serial", "network_scan"],
+            disabledServices: [
+              "parameters",
+              "device",
+              "light",
+              "relay",
+              "measurements",
+              "quality_records",
+            ],
+          });
+        } else {
+          // 正常模式，检查数据库健康状态
+          const poolHealth = await checkPoolHealth();
 
-        res.status(poolHealth.healthy ? 200 : 503).json({
-          status: poolHealth.healthy ? "ok" : "degraded",
-          timestamp: new Date().toISOString(),
-          database: {
-            healthy: poolHealth.healthy,
-            totalConnections: poolHealth.totalConnections,
-            idleConnections: poolHealth.idleConnections,
-            waitingClients: poolHealth.waitingClients,
-            error: poolHealth.error,
-          },
-        });
+          res.status(poolHealth.healthy ? 200 : 503).json({
+            status: poolHealth.healthy ? "ok" : "degraded",
+            timestamp: new Date().toISOString(),
+            mode: "normal",
+            database: {
+              healthy: poolHealth.healthy,
+              totalConnections: poolHealth.totalConnections,
+              idleConnections: poolHealth.idleConnections,
+              waitingClients: poolHealth.waitingClients,
+              error: poolHealth.error,
+            },
+            availableServices: [
+              "parameters",
+              "device",
+              "serial",
+              "light",
+              "relay",
+              "measurements",
+              "quality_records",
+              "network_scan",
+            ],
+          });
+        }
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : String(error);
         res.status(503).json({
           status: "error",
           timestamp: new Date().toISOString(),
+          mode: skipDatabaseValidation ? "skip_database_validation" : "normal",
           database: {
             healthy: false,
             error: errorMessage,
@@ -112,7 +216,15 @@ async function startApplication() {
     // 5. 启动服务器（在所有初始化完成后）
     app.listen(port, () => {
       logger.info(`🎉 服务器成功启动在 http://localhost:${port}`);
-      logger.info("✅ 应用初始化完成，所有服务已就绪");
+      if (skipDatabaseValidation) {
+        logger.info("✅ 应用初始化完成（跳过数据库验证模式）");
+        logger.info("📋 可用服务: 串口通信、网络扫描");
+        logger.info(
+          "⚠️  禁用服务: 参数管理、设备管理、灯光控制、继电器控制、测量数据、质量记录"
+        );
+      } else {
+        logger.info("✅ 应用初始化完成，所有服务已就绪");
+      }
     });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
