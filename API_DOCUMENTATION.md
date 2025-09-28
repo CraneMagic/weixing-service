@@ -671,6 +671,17 @@
 
 获取图片文件
 
+### GET /api/quality-records/error-images/\*
+
+获取错误图片文件
+
+**服务文件夹**: `./error/`
+
+**示例**:
+
+- 请求: `GET /api/quality-records/error-images/2024/fail/image001.jpg`
+- 实际文件: `./error/2024/fail/image001.jpg`
+
 ---
 
 ## 9. 网络扫描 API (`/api/network`)

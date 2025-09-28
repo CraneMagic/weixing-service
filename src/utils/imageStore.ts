@@ -172,6 +172,31 @@ export function getImagePath(imagePath: string): string | null {
 }
 
 /**
+ * 获取错误图片的完整路径
+ * @param imagePath 图片路径，可以是文件名或子目录路径
+ * @returns 图片的绝对路径，如果不存在则返回null
+ */
+export function getErrorImagePath(imagePath: string): string | null {
+  const errorImageDir = path.resolve("./error");
+  const absoluteErrorImageDir = path.resolve(errorImageDir);
+  const fullImagePath = path.join(absoluteErrorImageDir, imagePath);
+
+  // 安全性检查：确保文件名不会导致目录遍历
+  const resolvedPath = path.resolve(fullImagePath);
+  if (!resolvedPath.startsWith(absoluteErrorImageDir)) {
+    logger.warn(`检测到潜在的目录遍历攻击: ${imagePath}`);
+    return null;
+  }
+
+  logger.info(`正在检查错误图片路径: ${fullImagePath}`);
+  if (fs.existsSync(fullImagePath)) {
+    return fullImagePath;
+  }
+
+  return null;
+}
+
+/**
  * 获取磁盘空间信息
  * @returns 磁盘空间统计信息
  */

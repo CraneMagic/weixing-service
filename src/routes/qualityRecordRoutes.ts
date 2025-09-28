@@ -11,6 +11,7 @@ import {
   updateFailToInReview,
   deleteQualityRecord,
   getImage,
+  getErrorImage,
   getStorageInfo,
   triggerEmergencyCleanup,
   checkAndAutoClean,
@@ -27,6 +28,9 @@ const router = Router();
 
 // 图片获取路由 - 支持子目录结构
 router.get("/images/*", getImage);
+
+// 错误图片获取路由 - 支持子目录结构
+router.get("/error-images/*", getErrorImage);
 
 // 存储空间信息路由
 router.get("/storage-info", getStorageInfo);

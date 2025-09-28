@@ -18,6 +18,7 @@ import {
 } from "../services/db-postgres";
 import {
   getImagePath,
+  getErrorImagePath,
   getDiskSpaceInfo,
   getImageDirStats,
 } from "../utils/imageStore";
@@ -267,6 +268,44 @@ export async function getImage(req: Request, res: Response) {
     return res.status(500).json({
       success: false,
       message: `获取图片失败: ${errorMessage}`,
+    });
+  }
+}
+
+/**
+ * 获取错误图片文件
+ */
+export async function getErrorImage(
+  req: Request,
+  res: Response
+): Promise<Response> {
+  try {
+    // 使用 req.params[0] 获取通配符匹配的完整路径
+    const imagePath = req.params[0];
+    if (!imagePath) {
+      return res.status(400).json({
+        success: false,
+        message: "缺少图片路径",
+      });
+    }
+
+    const fullImagePath = getErrorImagePath(imagePath);
+
+    if (fullImagePath) {
+      res.sendFile(fullImagePath);
+      return res;
+    } else {
+      return res.status(404).json({
+        success: false,
+        message: `未找到错误图片文件: ${imagePath}`,
+      });
+    }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`获取错误图片失败: ${errorMessage}`);
+    return res.status(500).json({
+      success: false,
+      message: `获取错误图片失败: ${errorMessage}`,
     });
   }
 }
