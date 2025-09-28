@@ -11,10 +11,10 @@ import {
   getQualityRecordsGroupedBySecondAndIp,
   updateStatusFromPassToIgnored as updatePassService,
   updateStatusFromFailToInReview as updateFailService,
-  updateReviewResult,
-  batchUpdateReviewResult,
-  getFalsePositiveRateStats,
-  getPendingReviewRecords,
+  updateReviewResult as updateReviewResultService,
+  batchUpdateReviewResult as batchUpdateReviewResultService,
+  getFalsePositiveRateStats as getFalsePositiveRateStatsService,
+  getPendingReviewRecords as getPendingReviewRecordsService,
 } from "../services/db-postgres";
 import {
   getImagePath,
@@ -696,7 +696,10 @@ export async function triggerRegularCleanup(req: Request, res: Response) {
 /**
  * 更新单条记录审核结果
  */
-export async function updateReviewResult(req: Request, res: Response) {
+export async function updateReviewResult(
+  req: Request,
+  res: Response
+): Promise<Response> {
   try {
     const { client_ip, timestamp } = req.params;
     const { review_result, reviewer, review_notes } = req.body;
@@ -722,7 +725,7 @@ export async function updateReviewResult(req: Request, res: Response) {
       });
     }
 
-    const result = await updateReviewResult(client_ip, timestamp, {
+    const result = await updateReviewResultService(client_ip, timestamp, {
       review_result,
       reviewer,
       review_notes,
@@ -753,7 +756,10 @@ export async function updateReviewResult(req: Request, res: Response) {
 /**
  * 批量更新审核结果
  */
-export async function batchUpdateReviewResult(req: Request, res: Response) {
+export async function batchUpdateReviewResult(
+  req: Request,
+  res: Response
+): Promise<Response> {
   try {
     const { records, reviewer, review_notes } = req.body;
 
@@ -805,7 +811,7 @@ export async function batchUpdateReviewResult(req: Request, res: Response) {
       review_notes: record.review_notes || review_notes,
     }));
 
-    const result = await batchUpdateReviewResult(recordsWithReviewer);
+    const result = await batchUpdateReviewResultService(recordsWithReviewer);
 
     return res.status(200).json({
       success: true,
@@ -825,7 +831,10 @@ export async function batchUpdateReviewResult(req: Request, res: Response) {
 /**
  * 获取待审核记录
  */
-export async function getPendingReviewRecords(req: Request, res: Response) {
+export async function getPendingReviewRecords(
+  req: Request,
+  res: Response
+): Promise<Response> {
   try {
     const {
       limit = 20,
@@ -846,7 +855,7 @@ export async function getPendingReviewRecords(req: Request, res: Response) {
       pc_num: pc_num as string | undefined,
     };
 
-    const result = await getPendingReviewRecords(options);
+    const result = await getPendingReviewRecordsService(options);
 
     return res.status(200).json({
       success: true,
@@ -865,7 +874,10 @@ export async function getPendingReviewRecords(req: Request, res: Response) {
 /**
  * 获取误报率统计
  */
-export async function getFalsePositiveRateStats(req: Request, res: Response) {
+export async function getFalsePositiveRateStats(
+  req: Request,
+  res: Response
+): Promise<Response> {
   try {
     const { startTime, endTime, groupBy = "day" } = req.query;
 
@@ -875,7 +887,7 @@ export async function getFalsePositiveRateStats(req: Request, res: Response) {
       groupBy: groupBy as "day" | "week" | "month",
     };
 
-    const result = await getFalsePositiveRateStats(options);
+    const result = await getFalsePositiveRateStatsService(options);
 
     return res.status(200).json({
       success: true,
