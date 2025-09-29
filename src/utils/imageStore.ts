@@ -177,7 +177,8 @@ export function getImagePath(imagePath: string): string | null {
  * @returns 图片的绝对路径，如果不存在则返回null
  */
 export function getErrorImagePath(imagePath: string): string | null {
-  const errorImageDir = path.resolve("./error");
+  const dataDir = process.env.DB_PATH || "./data";
+  const errorImageDir = path.join(dataDir, "error");
   const absoluteErrorImageDir = path.resolve(errorImageDir);
   const fullImagePath = path.join(absoluteErrorImageDir, imagePath);
 
