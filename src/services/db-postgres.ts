@@ -644,6 +644,7 @@ export async function getQualityRecords(options: {
   model_type?: string;
   status?: string;
   label?: string;
+  review_result?: string;
   startTime?: string;
   endTime?: string;
   sortBy?: string;
@@ -662,6 +663,7 @@ export async function getQualityRecords(options: {
     model_type,
     status,
     label,
+    review_result,
     startTime,
     endTime,
     sortBy = "timestamp",
@@ -704,7 +706,7 @@ export async function getQualityRecords(options: {
     if (status.toLowerCase() === "null") {
       conditions.push(`status IS NULL`);
     } else {
-      conditions.push(`status = $${paramIndex++}`);
+      conditions.push(`UPPER(status) = UPPER($${paramIndex++})`);
       params.push(status);
     }
   }
@@ -714,6 +716,14 @@ export async function getQualityRecords(options: {
     } else {
       conditions.push(`label = $${paramIndex++}`);
       params.push(label);
+    }
+  }
+  if (review_result !== undefined && review_result.trim() !== "") {
+    if (review_result.toLowerCase() === "null") {
+      conditions.push(`review_result IS NULL`);
+    } else {
+      conditions.push(`review_result = $${paramIndex++}`);
+      params.push(review_result);
     }
   }
   if (startTime) {
