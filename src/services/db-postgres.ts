@@ -727,11 +727,11 @@ export async function getQualityRecords(options: {
     }
   }
   if (startTime) {
-    conditions.push(`"timestamp" >= $${paramIndex++}`);
+    conditions.push(`capture_time >= $${paramIndex++}`);
     params.push(startTime);
   }
   if (endTime) {
-    conditions.push(`"timestamp" <= $${paramIndex++}`);
+    conditions.push(`capture_time <= $${paramIndex++}`);
     params.push(endTime);
   }
 
@@ -785,11 +785,11 @@ export async function getQualityRecordsGroupedBySecond(options: {
   let paramIndex = 1;
 
   if (startTime) {
-    conditions.push(`timestamp >= $${paramIndex++}`);
+    conditions.push(`capture_time >= $${paramIndex++}`);
     params.push(startTime);
   }
   if (endTime) {
-    conditions.push(`timestamp <= $${paramIndex++}`);
+    conditions.push(`capture_time <= $${paramIndex++}`);
     params.push(endTime);
   }
 
@@ -863,11 +863,11 @@ export async function getQualityRecordsGroupedBySecondAndIp(options: {
   const params: any[] = [];
   const conditions: string[] = [];
   if (startTime) {
-    conditions.push(`timestamp >= $${params.length + 1}`);
+    conditions.push(`capture_time >= $${params.length + 1}`);
     params.push(startTime);
   }
   if (endTime) {
-    conditions.push(`timestamp <= $${params.length + 1}`);
+    conditions.push(`capture_time <= $${params.length + 1}`);
     params.push(endTime);
   }
 
