@@ -1010,6 +1010,7 @@ export async function getQualityRecordsStatistics(
       model_type: model_type as string | undefined,
     };
 
+    // 直接使用优化后的统计服务
     const result = await getStatisticsService(options);
 
     return res.status(200).json({

@@ -1726,93 +1726,38 @@ export async function getQualityRecordsStatistics(options: {
 
   const whereClause = whereConditions.join(" AND ");
 
-  // 基础统计查询
-  const baseStatsSql = `
+  // 超优化版本：直接在单个查询中完成所有统计，避免 CTE 和复杂计算
+  const optimizedStatsSql = `
     SELECT 
+      -- 基础统计（使用最直接的 COUNT FILTER）
       COUNT(*)::int AS total_images,
       COUNT(*) FILTER (WHERE label = 'pass')::int AS pass_count,
       COUNT(*) FILTER (WHERE label = 'fail')::int AS fail_count,
-      COUNT(*) FILTER (WHERE label = 'invalid')::int AS invalid_count
-    FROM quality_records
-    WHERE ${whereClause}
-  `;
-
-  // 审核状态统计查询
-  const statusStatsSql = `
-    SELECT 
+      COUNT(*) FILTER (WHERE label = 'invalid')::int AS invalid_count,
+      
+      -- 审核状态统计
       COUNT(*) FILTER (WHERE status = 'INREVIEW')::int AS inreview_count,
       COUNT(*) FILTER (WHERE status = 'RESOLVED')::int AS resolved_count,
       COUNT(*) FILTER (WHERE status = 'IGNORED')::int AS ignored_count,
-      COUNT(*) FILTER (WHERE status = 'MARKED')::int AS marked_count
-    FROM quality_records
-    WHERE ${whereClause}
-  `;
-
-  // 审核结果统计查询（仅针对已解决的记录）
-  const reviewResultStatsSql = `
-    SELECT 
-      COUNT(*) FILTER (WHERE review_result = 'pass')::int AS pass_count,
-      COUNT(*) FILTER (WHERE review_result = 'fail')::int AS fail_count,
-      COUNT(*) FILTER (WHERE review_result = 'unclear')::int AS unclear_count
-    FROM quality_records
-    WHERE ${whereClause} AND status = 'RESOLVED'
-  `;
-
-  // 质量指标计算查询
-  const qualityMetricsSql = `
-    SELECT 
-      -- 误报率：AI判断为fail但人工审核为pass的比例
-      CASE 
-        WHEN COUNT(*) FILTER (WHERE label = 'fail') > 0 
-        THEN ROUND(
-          (COUNT(*) FILTER (WHERE label = 'fail' AND review_result = 'pass')::numeric / 
-           COUNT(*) FILTER (WHERE label = 'fail')::numeric) * 100, 2
-        )
-        ELSE 0 
-      END AS false_positive_rate,
+      COUNT(*) FILTER (WHERE status = 'MARKED')::int AS marked_count,
       
-      -- 漏报率：AI判断为pass但人工审核为fail的比例
-      CASE 
-        WHEN COUNT(*) FILTER (WHERE label = 'pass') > 0 
-        THEN ROUND(
-          (COUNT(*) FILTER (WHERE label = 'pass' AND review_result = 'fail')::numeric / 
-           COUNT(*) FILTER (WHERE label = 'pass')::numeric) * 100, 2
-        )
-        ELSE 0 
-      END AS false_negative_rate,
+      -- 审核结果统计（仅针对已解决的记录）
+      COUNT(*) FILTER (WHERE status = 'RESOLVED' AND review_result = 'pass')::int AS review_pass_count,
+      COUNT(*) FILTER (WHERE status = 'RESOLVED' AND review_result = 'fail')::int AS review_fail_count,
+      COUNT(*) FILTER (WHERE status = 'RESOLVED' AND review_result = 'unclear')::int AS review_unclear_count,
       
-      -- 准确率：AI和人工审核结果一致的记录比例
-      CASE 
-        WHEN COUNT(*) FILTER (WHERE status = 'RESOLVED') > 0 
-        THEN ROUND(
-          (COUNT(*) FILTER (WHERE (label = 'pass' AND review_result = 'pass') OR 
-                                    (label = 'fail' AND review_result = 'fail'))::numeric / 
-           COUNT(*) FILTER (WHERE status = 'RESOLVED')::numeric) * 100, 2
-        )
-        ELSE 0 
-      END AS accuracy
+      -- 质量指标计算所需的数据（使用更简单的条件）
+      COUNT(*) FILTER (WHERE label = 'fail' AND review_result = 'pass')::int AS false_positive_count,
+      COUNT(*) FILTER (WHERE label = 'pass' AND review_result = 'fail')::int AS false_negative_count,
+      COUNT(*) FILTER (WHERE status = 'RESOLVED' AND label = review_result)::int AS accurate_count
     FROM quality_records
     WHERE ${whereClause}
   `;
 
   try {
-    // 并行执行所有查询
-    const [
-      { rows: baseStatsRows },
-      { rows: statusStatsRows },
-      { rows: reviewResultStatsRows },
-      { rows: qualityMetricsRows },
-    ] = await Promise.all([
-      pool.query(baseStatsSql, queryParams),
-      pool.query(statusStatsSql, queryParams),
-      pool.query(reviewResultStatsSql, queryParams),
-      pool.query(qualityMetricsSql, queryParams),
-    ]);
-
-    const baseStats = baseStatsRows[0];
-    const statusStats = statusStatsRows[0];
-    const reviewResultStats = reviewResultStatsRows[0];
-    const qualityMetrics = qualityMetricsRows[0];
+    // 执行单个优化查询
+    const { rows } = await pool.query(optimizedStatsSql, queryParams);
+    const stats = rows[0];
 
     // 计算时间范围描述
     const startDate = new Date(startTime);
@@ -1833,26 +1778,48 @@ export async function getQualityRecordsStatistics(options: {
       duration = "小于1分钟";
     }
 
+    // 在应用层计算质量指标（避免复杂的 SQL 计算）
+    const falsePositiveRate =
+      stats.fail_count > 0
+        ? Math.round(
+            (stats.false_positive_count / stats.fail_count) * 100 * 100
+          ) / 100
+        : 0;
+
+    const falseNegativeRate =
+      stats.pass_count > 0
+        ? Math.round(
+            (stats.false_negative_count / stats.pass_count) * 100 * 100
+          ) / 100
+        : 0;
+
+    const accuracy =
+      stats.resolved_count > 0
+        ? Math.round(
+            (stats.accurate_count / stats.resolved_count) * 100 * 100
+          ) / 100
+        : 0;
+
     return {
-      totalImages: baseStats.total_images,
-      passCount: baseStats.pass_count,
-      failCount: baseStats.fail_count,
-      invalidCount: baseStats.invalid_count,
+      totalImages: stats.total_images,
+      passCount: stats.pass_count,
+      failCount: stats.fail_count,
+      invalidCount: stats.invalid_count,
       statusCounts: {
-        INREVIEW: statusStats.inreview_count,
-        RESOLVED: statusStats.resolved_count,
-        IGNORED: statusStats.ignored_count,
-        MARKED: statusStats.marked_count,
+        INREVIEW: stats.inreview_count,
+        RESOLVED: stats.resolved_count,
+        IGNORED: stats.ignored_count,
+        MARKED: stats.marked_count,
       },
       reviewResultCounts: {
-        pass: reviewResultStats.pass_count,
-        fail: reviewResultStats.fail_count,
-        unclear: reviewResultStats.unclear_count,
+        pass: stats.review_pass_count,
+        fail: stats.review_fail_count,
+        unclear: stats.review_unclear_count,
       },
       qualityMetrics: {
-        falsePositiveRate: qualityMetrics.false_positive_rate,
-        falseNegativeRate: qualityMetrics.false_negative_rate,
-        accuracy: qualityMetrics.accuracy,
+        falsePositiveRate,
+        falseNegativeRate,
+        accuracy,
       },
       timeRange: {
         startTime,
