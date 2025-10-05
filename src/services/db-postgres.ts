@@ -1081,39 +1081,67 @@ export async function updateReviewResult(
   client_ip: string,
   timestamp: string,
   reviewData: {
-    review_result: string;
+    review_result?: string;
     reviewer: string;
     review_notes?: string;
+    status?: string;
   }
 ): Promise<{ updated: number }> {
-  const sql = `
-    UPDATE quality_records 
-    SET 
-      review_result = $1,
-      review_time = NOW(),
-      reviewer = $2,
-      review_notes = $3
-    WHERE client_ip = $4 AND timestamp = $5
-  `;
+  let sql: string;
+  let params: any[];
 
-  try {
-    const result = await pool.query(sql, [
+  if (reviewData.status === "IGNORED") {
+    // 如果状态为IGNORED，只更新状态和相关字段
+    sql = `
+      UPDATE quality_records 
+      SET 
+        status = $1,
+        review_time = NOW(),
+        reviewer = $2,
+        review_notes = $3
+      WHERE client_ip = $4 AND timestamp = $5
+    `;
+    params = [
+      reviewData.status,
+      reviewData.reviewer,
+      reviewData.review_notes || null,
+      client_ip,
+      timestamp,
+    ];
+  } else {
+    // 其他情况，更新审核结果
+    sql = `
+      UPDATE quality_records 
+      SET 
+        review_result = $1,
+        review_time = NOW(),
+        reviewer = $2,
+        review_notes = $3
+      WHERE client_ip = $4 AND timestamp = $5
+    `;
+    params = [
       reviewData.review_result,
       reviewData.reviewer,
       reviewData.review_notes || null,
       client_ip,
       timestamp,
-    ]);
+    ];
+  }
+
+  try {
+    const result = await pool.query(sql, params);
 
     const updated = result.rowCount || 0;
-    logger.info(
-      `Updated review result for record ${client_ip}/${timestamp}: ${reviewData.review_result}`
-    );
+    const action =
+      reviewData.status === "IGNORED"
+        ? `status to ${reviewData.status}`
+        : `review result to ${reviewData.review_result}`;
+    logger.info(`Updated record ${client_ip}/${timestamp}: ${action}`);
     return { updated };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     logger.error(
-      `Failed to update review result for ${client_ip}/${timestamp}: ${errorMessage}`
+      `Failed to update record ${client_ip}/${timestamp}: ${errorMessage}`
     );
     throw error;
   }

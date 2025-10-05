@@ -743,7 +743,7 @@ export async function updateReviewResult(
 ): Promise<Response> {
   try {
     const { client_ip, timestamp } = req.params;
-    const { review_result, reviewer, review_notes } = req.body;
+    const { review_result, reviewer, review_notes, status } = req.body;
 
     if (!client_ip || !timestamp) {
       return res.status(400).json({
@@ -752,24 +752,36 @@ export async function updateReviewResult(
       });
     }
 
-    if (!review_result || !reviewer) {
-      return res.status(400).json({
-        success: false,
-        message: "缺少 review_result 或 reviewer",
-      });
-    }
+    // 如果status为IGNORED，则不需要review_result和reviewer
+    if (status === "IGNORED") {
+      if (!reviewer) {
+        return res.status(400).json({
+          success: false,
+          message: "缺少 reviewer",
+        });
+      }
+    } else {
+      // 其他情况需要review_result和reviewer
+      if (!review_result || !reviewer) {
+        return res.status(400).json({
+          success: false,
+          message: "缺少 review_result 或 reviewer",
+        });
+      }
 
-    if (!["pass", "fail", "unclear"].includes(review_result)) {
-      return res.status(400).json({
-        success: false,
-        message: "review_result 必须是 pass、fail 或 unclear",
-      });
+      if (!["pass", "fail", "unclear"].includes(review_result)) {
+        return res.status(400).json({
+          success: false,
+          message: "review_result 必须是 pass、fail 或 unclear",
+        });
+      }
     }
 
     const result = await updateReviewResultService(client_ip, timestamp, {
       review_result,
       reviewer,
       review_notes,
+      status,
     });
 
     if (result.updated === 0) {
