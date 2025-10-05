@@ -1183,21 +1183,23 @@ export async function updateReviewResult(
       timestamp,
     ];
   } else {
-    // 其他情况，更新审核结果
+    // 其他情况，更新审核结果和状态
     sql = `
       UPDATE quality_records 
       SET 
         review_result = $1,
         review_time = NOW(),
         reviewer = $2,
-        review_notes = $3
-      WHERE client_ip = $4 AND timestamp = $5
+        review_notes = $3,
+        status = $4
+      WHERE client_ip = $5 AND timestamp = $6
       RETURNING ${returnFields}
     `;
     params = [
       reviewData.review_result,
       reviewData.reviewer,
       reviewData.review_notes || null,
+      reviewData.status || "RESOLVED", // 如果没有指定status，默认为RESOLVED
       client_ip,
       timestamp,
     ];
@@ -1763,8 +1765,8 @@ export async function getQualityRecordsStatistics(options: {
       CASE 
         WHEN COUNT(*) FILTER (WHERE label = 'fail') > 0 
         THEN ROUND(
-          (COUNT(*) FILTER (WHERE label = 'fail' AND review_result = 'pass')::float / 
-           COUNT(*) FILTER (WHERE label = 'fail')) * 100, 2
+          (COUNT(*) FILTER (WHERE label = 'fail' AND review_result = 'pass')::numeric / 
+           COUNT(*) FILTER (WHERE label = 'fail')::numeric) * 100, 2
         )
         ELSE 0 
       END AS false_positive_rate,
@@ -1773,8 +1775,8 @@ export async function getQualityRecordsStatistics(options: {
       CASE 
         WHEN COUNT(*) FILTER (WHERE label = 'pass') > 0 
         THEN ROUND(
-          (COUNT(*) FILTER (WHERE label = 'pass' AND review_result = 'fail')::float / 
-           COUNT(*) FILTER (WHERE label = 'pass')) * 100, 2
+          (COUNT(*) FILTER (WHERE label = 'pass' AND review_result = 'fail')::numeric / 
+           COUNT(*) FILTER (WHERE label = 'pass')::numeric) * 100, 2
         )
         ELSE 0 
       END AS false_negative_rate,
@@ -1784,8 +1786,8 @@ export async function getQualityRecordsStatistics(options: {
         WHEN COUNT(*) FILTER (WHERE status = 'RESOLVED') > 0 
         THEN ROUND(
           (COUNT(*) FILTER (WHERE (label = 'pass' AND review_result = 'pass') OR 
-                                    (label = 'fail' AND review_result = 'fail'))::float / 
-           COUNT(*) FILTER (WHERE status = 'RESOLVED')) * 100, 2
+                                    (label = 'fail' AND review_result = 'fail'))::numeric / 
+           COUNT(*) FILTER (WHERE status = 'RESOLVED')::numeric) * 100, 2
         )
         ELSE 0 
       END AS accuracy
