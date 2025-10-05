@@ -223,6 +223,46 @@ export async function initializePostgresDB(): Promise<void> {
         column: "(date_trunc('second', capture_time), client_ip)",
         sql: "CREATE INDEX IF NOT EXISTS idx_quality_records_capture_time_trunc_second_ip ON quality_records(date_trunc('second', capture_time), client_ip)",
       },
+      // 新增：性能优化索引
+      {
+        name: "idx_quality_records_status",
+        table: "quality_records",
+        column: "status",
+      },
+      {
+        name: "idx_quality_records_review_result",
+        table: "quality_records",
+        column: "review_result",
+      },
+      {
+        name: "idx_quality_records_model_type",
+        table: "quality_records",
+        column: "model_type",
+      },
+      {
+        name: "idx_quality_records_pc_num",
+        table: "quality_records",
+        column: "pc_num",
+      },
+      // 复合索引：常用查询组合
+      {
+        name: "idx_quality_records_status_capture_time",
+        table: "quality_records",
+        column: "(status, capture_time)",
+        sql: "CREATE INDEX IF NOT EXISTS idx_quality_records_status_capture_time ON quality_records(status, capture_time)",
+      },
+      {
+        name: "idx_quality_records_label_status_capture_time",
+        table: "quality_records",
+        column: "(label, status, capture_time)",
+        sql: "CREATE INDEX IF NOT EXISTS idx_quality_records_label_status_capture_time ON quality_records(label, status, capture_time)",
+      },
+      {
+        name: "idx_quality_records_client_ip_capture_time",
+        table: "quality_records",
+        column: "(client_ip, capture_time)",
+        sql: "CREATE INDEX IF NOT EXISTS idx_quality_records_client_ip_capture_time ON quality_records(client_ip, capture_time)",
+      },
     ];
 
     for (const index of indexes) {

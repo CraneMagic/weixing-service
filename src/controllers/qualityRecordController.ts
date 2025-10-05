@@ -794,7 +794,10 @@ export async function updateReviewResult(
     return res.status(200).json({
       success: true,
       message: "审核结果已更新",
-      data: result,
+      data: {
+        updated: result.updated,
+        record: result.record, // 返回完整的修改后记录
+      },
     });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);

@@ -649,11 +649,15 @@ export async function getQualityRecords(options: {
   endTime?: string;
   sortBy?: string;
   sortOrder?: "ASC" | "DESC";
+  useCursorPagination?: boolean; // 新增：是否使用游标分页
+  cursor?: string; // 新增：游标值（timestamp）
 }): Promise<{
   data: QualityRecord[];
   total: number;
   page: number;
   limit: number;
+  nextCursor?: string; // 新增：下一页游标
+  hasMore?: boolean; // 新增：是否有更多数据
 }> {
   const {
     limit = 20,
@@ -668,6 +672,8 @@ export async function getQualityRecords(options: {
     endTime,
     sortBy = "timestamp",
     sortOrder = "DESC",
+    useCursorPagination = false,
+    cursor,
   } = options;
 
   const validSortBy = [
@@ -683,7 +689,18 @@ export async function getQualityRecords(options: {
   const orderBy = validSortBy.includes(sortBy) ? `"${sortBy}"` : "timestamp";
   const orderDirection = sortOrder === "ASC" ? "ASC" : "DESC";
 
-  let query = `SELECT * FROM quality_records`;
+  // 优化：不查询image字段（通常很大），提高查询性能
+  const selectFields = `
+    client_ip, timestamp, capture_time, model_type, label, confidence, 
+    frame_id, fis, fps, filename, resolution, size_bytes, size_formatted, 
+    jpeg_quality, inference_time_ms, capture_time_ms, jpeg_encode_time_ms, 
+    message_id, object_key, status, pc_num, error_path, oss_path, 
+    review_result, review_time, reviewer, review_notes
+  `
+    .replace(/\s+/g, " ")
+    .trim();
+
+  let query = `SELECT ${selectFields} FROM quality_records`;
   let countQuery = `SELECT COUNT(*) as total FROM quality_records`;
 
   const params: any[] = [];
@@ -706,8 +723,9 @@ export async function getQualityRecords(options: {
     if (status.toLowerCase() === "null") {
       conditions.push(`status IS NULL`);
     } else {
-      conditions.push(`UPPER(status) = UPPER($${paramIndex++})`);
-      params.push(status);
+      // 优化：直接比较，避免UPPER()函数，让索引生效
+      conditions.push(`status = $${paramIndex++}`);
+      params.push(status.toUpperCase());
     }
   }
   if (label !== undefined && label.trim() !== "") {
@@ -735,26 +753,70 @@ export async function getQualityRecords(options: {
     params.push(endTime);
   }
 
+  // 游标分页：基于排序字段添加游标条件
+  if (useCursorPagination && cursor) {
+    const cursorField = orderBy;
+    if (sortOrder === "DESC") {
+      conditions.push(`${cursorField} < $${paramIndex++}`);
+    } else {
+      conditions.push(`${cursorField} > $${paramIndex++}`);
+    }
+    params.push(cursor);
+  }
+
   if (conditions.length > 0) {
     const whereClause = ` WHERE ` + conditions.join(" AND ");
     query += whereClause;
-    countQuery += whereClause;
+    // 只有在非游标分页时才执行count查询（count查询在大数据量时很慢）
+    if (!useCursorPagination) {
+      countQuery += whereClause;
+    }
   }
 
   try {
-    const countResult = await pool.query(countQuery, params);
-    const total = parseInt(countResult.rows[0].total, 10);
+    let total = 0;
+    let countResult;
 
-    query += ` ORDER BY ${orderBy} ${orderDirection} LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
-    params.push(limit, offset);
+    // 只有在非游标分页时才执行count查询
+    if (!useCursorPagination) {
+      countResult = await pool.query(countQuery, params);
+      total = parseInt(countResult.rows[0].total, 10);
+    }
+
+    // 构建查询：游标分页使用LIMIT，传统分页使用LIMIT+OFFSET
+    if (useCursorPagination) {
+      query += ` ORDER BY ${orderBy} ${orderDirection} LIMIT $${paramIndex++}`;
+      params.push(limit + 1); // 多查询一条，用于判断是否有更多数据
+    } else {
+      query += ` ORDER BY ${orderBy} ${orderDirection} LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
+      params.push(limit, offset);
+    }
 
     const { rows } = await pool.query(query, params);
 
+    // 处理游标分页的结果
+    let hasMore = false;
+    let nextCursor: string | undefined;
+    let resultRows = rows;
+
+    if (useCursorPagination) {
+      hasMore = rows.length > limit;
+      if (hasMore) {
+        resultRows = rows.slice(0, limit); // 移除多余的一行
+      }
+      if (resultRows.length > 0) {
+        const lastRow = resultRows[resultRows.length - 1];
+        nextCursor = lastRow[sortBy === "timestamp" ? "timestamp" : sortBy];
+      }
+    }
+
     return {
-      data: rows,
+      data: resultRows,
       total,
-      page: offset / limit + 1,
+      page: useCursorPagination ? 1 : offset / limit + 1,
       limit,
+      nextCursor,
+      hasMore,
     };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -1086,9 +1148,20 @@ export async function updateReviewResult(
     review_notes?: string;
     status?: string;
   }
-): Promise<{ updated: number }> {
+): Promise<{ updated: number; record?: QualityRecord }> {
   let sql: string;
   let params: any[];
+
+  // 定义返回的字段（排除image字段以提高性能）
+  const returnFields = `
+    client_ip, timestamp, capture_time, model_type, label, confidence, 
+    frame_id, fis, fps, filename, resolution, size_bytes, size_formatted, 
+    jpeg_quality, inference_time_ms, capture_time_ms, jpeg_encode_time_ms, 
+    message_id, object_key, status, pc_num, error_path, oss_path, 
+    review_result, review_time, reviewer, review_notes
+  `
+    .replace(/\s+/g, " ")
+    .trim();
 
   if (reviewData.status === "IGNORED") {
     // 如果状态为IGNORED，只更新状态和相关字段
@@ -1100,6 +1173,7 @@ export async function updateReviewResult(
         reviewer = $2,
         review_notes = $3
       WHERE client_ip = $4 AND timestamp = $5
+      RETURNING ${returnFields}
     `;
     params = [
       reviewData.status,
@@ -1118,6 +1192,7 @@ export async function updateReviewResult(
         reviewer = $2,
         review_notes = $3
       WHERE client_ip = $4 AND timestamp = $5
+      RETURNING ${returnFields}
     `;
     params = [
       reviewData.review_result,
@@ -1137,7 +1212,10 @@ export async function updateReviewResult(
         ? `status to ${reviewData.status}`
         : `review result to ${reviewData.review_result}`;
     logger.info(`Updated record ${client_ip}/${timestamp}: ${action}`);
-    return { updated };
+
+    // 返回更新后的记录
+    const record = updated > 0 ? result.rows[0] : undefined;
+    return { updated, record };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     logger.error(
