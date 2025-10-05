@@ -1,0 +1,28 @@
+### 质量记录统计信息 API 测试
+
+### 基础查询 - 获取某天的所有统计
+GET {{host}}/api/quality-records/statistics?startTime=2025-10-05T00:00:00.000Z&endTime=2025-10-05T23:59:59.000Z
+
+### 指定IP查询
+GET {{host}}/api/quality-records/statistics?startTime=2025-10-05T00:00:00.000Z&endTime=2025-10-05T23:59:59.000Z&client_ip=192.168.71.28
+
+### 指定PC编号查询
+GET {{host}}/api/quality-records/statistics?startTime=2025-10-05T00:00:00.000Z&endTime=2025-10-05T23:59:59.000Z&pc_num=tongrang-LAB02
+
+### 指定模型类型查询
+GET {{host}}/api/quality-records/statistics?startTime=2025-10-05T00:00:00.000Z&endTime=2025-10-05T23:59:59.000Z&model_type=DETECTION
+
+### 组合条件查询
+GET {{host}}/api/quality-records/statistics?startTime=2025-10-05T00:00:00.000Z&endTime=2025-10-05T23:59:59.000Z&client_ip=192.168.71.28&model_type=DETECTION
+
+### 测试错误情况 - 缺少必需参数
+GET {{host}}/api/quality-records/statistics?startTime=2025-10-05T00:00:00.000Z
+
+### 测试错误情况 - 时间格式错误
+GET {{host}}/api/quality-records/statistics?startTime=invalid-date&endTime=2025-10-05T23:59:59.000Z
+
+### 测试错误情况 - 时间范围过大（超过30天）
+GET {{host}}/api/quality-records/statistics?startTime=2025-01-01T00:00:00.000Z&endTime=2025-12-31T23:59:59.000Z
+
+### 变量设置
+@host = http://localhost:3000

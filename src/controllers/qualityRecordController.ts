@@ -15,6 +15,7 @@ import {
   batchUpdateReviewResult as batchUpdateReviewResultService,
   getFalsePositiveRateStats as getFalsePositiveRateStatsService,
   getPendingReviewRecords as getPendingReviewRecordsService,
+  getQualityRecordsStatistics as getStatisticsService,
 } from "../services/db-postgres";
 import {
   getImagePath,
@@ -955,6 +956,73 @@ export async function getFalsePositiveRateStats(
     return res.status(500).json({
       success: false,
       message: `获取失败: ${errorMessage}`,
+    });
+  }
+}
+
+/**
+ * 获取质量记录统计信息
+ */
+export async function getQualityRecordsStatistics(
+  req: Request,
+  res: Response
+): Promise<Response> {
+  try {
+    const { startTime, endTime, client_ip, pc_num, model_type } = req.query;
+
+    // 验证必需参数
+    if (!startTime || !endTime) {
+      return res.status(400).json({
+        success: false,
+        error: "缺少必需的查询参数",
+        message: "startTime 和 endTime 参数是必需的",
+      });
+    }
+
+    // 验证时间格式
+    const startTimeDate = new Date(startTime as string);
+    const endTimeDate = new Date(endTime as string);
+
+    if (isNaN(startTimeDate.getTime()) || isNaN(endTimeDate.getTime())) {
+      return res.status(400).json({
+        success: false,
+        error: "时间格式错误",
+        message: "startTime 和 endTime 必须是有效的 ISO 8601 格式时间",
+      });
+    }
+
+    // 检查时间范围不超过30天
+    const timeDiffMs = endTimeDate.getTime() - startTimeDate.getTime();
+    const maxTimeDiffMs = 30 * 24 * 60 * 60 * 1000; // 30天
+    if (timeDiffMs > maxTimeDiffMs) {
+      return res.status(400).json({
+        success: false,
+        error: "时间范围过大",
+        message: "查询时间范围不能超过30天",
+      });
+    }
+
+    const options = {
+      startTime: startTime as string,
+      endTime: endTime as string,
+      client_ip: client_ip as string | undefined,
+      pc_num: pc_num as string | undefined,
+      model_type: model_type as string | undefined,
+    };
+
+    const result = await getStatisticsService(options);
+
+    return res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`获取质量记录统计信息失败: ${errorMessage}`);
+    return res.status(500).json({
+      success: false,
+      error: "服务器内部错误",
+      message: "统计信息计算失败",
     });
   }
 }

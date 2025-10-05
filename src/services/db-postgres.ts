@@ -1661,6 +1661,210 @@ export async function getQualityRecordsGroupedBySecondAndIpSummary(options: {
   }
 }
 
+/**
+ * 获取质量记录统计信息
+ */
+export async function getQualityRecordsStatistics(options: {
+  startTime: string;
+  endTime: string;
+  client_ip?: string;
+  pc_num?: string;
+  model_type?: string;
+}): Promise<{
+  totalImages: number;
+  passCount: number;
+  failCount: number;
+  invalidCount: number;
+  statusCounts: {
+    INREVIEW: number;
+    RESOLVED: number;
+    IGNORED: number;
+    MARKED: number;
+  };
+  reviewResultCounts: {
+    pass: number;
+    fail: number;
+    unclear: number;
+  };
+  qualityMetrics: {
+    falsePositiveRate: number;
+    falseNegativeRate: number;
+    accuracy: number;
+  };
+  timeRange: {
+    startTime: string;
+    endTime: string;
+    duration: string;
+  };
+}> {
+  const { startTime, endTime, client_ip, pc_num, model_type } = options;
+
+  // 构建基础查询条件
+  const whereConditions = ["capture_time >= $1", "capture_time <= $2"];
+  const queryParams = [startTime, endTime];
+  let paramIndex = 3;
+
+  if (client_ip) {
+    whereConditions.push(`client_ip = $${paramIndex}`);
+    queryParams.push(client_ip);
+    paramIndex++;
+  }
+
+  if (pc_num) {
+    whereConditions.push(`pc_num = $${paramIndex}`);
+    queryParams.push(pc_num);
+    paramIndex++;
+  }
+
+  if (model_type) {
+    whereConditions.push(`model_type = $${paramIndex}`);
+    queryParams.push(model_type);
+    paramIndex++;
+  }
+
+  const whereClause = whereConditions.join(" AND ");
+
+  // 基础统计查询
+  const baseStatsSql = `
+    SELECT 
+      COUNT(*)::int AS total_images,
+      COUNT(*) FILTER (WHERE label = 'pass')::int AS pass_count,
+      COUNT(*) FILTER (WHERE label = 'fail')::int AS fail_count,
+      COUNT(*) FILTER (WHERE label = 'invalid')::int AS invalid_count
+    FROM quality_records
+    WHERE ${whereClause}
+  `;
+
+  // 审核状态统计查询
+  const statusStatsSql = `
+    SELECT 
+      COUNT(*) FILTER (WHERE status = 'INREVIEW')::int AS inreview_count,
+      COUNT(*) FILTER (WHERE status = 'RESOLVED')::int AS resolved_count,
+      COUNT(*) FILTER (WHERE status = 'IGNORED')::int AS ignored_count,
+      COUNT(*) FILTER (WHERE status = 'MARKED')::int AS marked_count
+    FROM quality_records
+    WHERE ${whereClause}
+  `;
+
+  // 审核结果统计查询（仅针对已解决的记录）
+  const reviewResultStatsSql = `
+    SELECT 
+      COUNT(*) FILTER (WHERE review_result = 'pass')::int AS pass_count,
+      COUNT(*) FILTER (WHERE review_result = 'fail')::int AS fail_count,
+      COUNT(*) FILTER (WHERE review_result = 'unclear')::int AS unclear_count
+    FROM quality_records
+    WHERE ${whereClause} AND status = 'RESOLVED'
+  `;
+
+  // 质量指标计算查询
+  const qualityMetricsSql = `
+    SELECT 
+      -- 误报率：AI判断为fail但人工审核为pass的比例
+      CASE 
+        WHEN COUNT(*) FILTER (WHERE label = 'fail') > 0 
+        THEN ROUND(
+          (COUNT(*) FILTER (WHERE label = 'fail' AND review_result = 'pass')::float / 
+           COUNT(*) FILTER (WHERE label = 'fail')) * 100, 2
+        )
+        ELSE 0 
+      END AS false_positive_rate,
+      
+      -- 漏报率：AI判断为pass但人工审核为fail的比例
+      CASE 
+        WHEN COUNT(*) FILTER (WHERE label = 'pass') > 0 
+        THEN ROUND(
+          (COUNT(*) FILTER (WHERE label = 'pass' AND review_result = 'fail')::float / 
+           COUNT(*) FILTER (WHERE label = 'pass')) * 100, 2
+        )
+        ELSE 0 
+      END AS false_negative_rate,
+      
+      -- 准确率：AI和人工审核结果一致的记录比例
+      CASE 
+        WHEN COUNT(*) FILTER (WHERE status = 'RESOLVED') > 0 
+        THEN ROUND(
+          (COUNT(*) FILTER (WHERE (label = 'pass' AND review_result = 'pass') OR 
+                                    (label = 'fail' AND review_result = 'fail'))::float / 
+           COUNT(*) FILTER (WHERE status = 'RESOLVED')) * 100, 2
+        )
+        ELSE 0 
+      END AS accuracy
+    FROM quality_records
+    WHERE ${whereClause}
+  `;
+
+  try {
+    // 并行执行所有查询
+    const [
+      { rows: baseStatsRows },
+      { rows: statusStatsRows },
+      { rows: reviewResultStatsRows },
+      { rows: qualityMetricsRows },
+    ] = await Promise.all([
+      pool.query(baseStatsSql, queryParams),
+      pool.query(statusStatsSql, queryParams),
+      pool.query(reviewResultStatsSql, queryParams),
+      pool.query(qualityMetricsSql, queryParams),
+    ]);
+
+    const baseStats = baseStatsRows[0];
+    const statusStats = statusStatsRows[0];
+    const reviewResultStats = reviewResultStatsRows[0];
+    const qualityMetrics = qualityMetricsRows[0];
+
+    // 计算时间范围描述
+    const startDate = new Date(startTime);
+    const endDate = new Date(endTime);
+    const durationMs = endDate.getTime() - startDate.getTime();
+    const durationDays = Math.floor(durationMs / (1000 * 60 * 60 * 24));
+    const durationHours = Math.floor(durationMs / (1000 * 60 * 60));
+    const durationMinutes = Math.floor(durationMs / (1000 * 60));
+
+    let duration = "";
+    if (durationDays > 0) {
+      duration = `${durationDays}天`;
+    } else if (durationHours > 0) {
+      duration = `${durationHours}小时`;
+    } else if (durationMinutes > 0) {
+      duration = `${durationMinutes}分钟`;
+    } else {
+      duration = "小于1分钟";
+    }
+
+    return {
+      totalImages: baseStats.total_images,
+      passCount: baseStats.pass_count,
+      failCount: baseStats.fail_count,
+      invalidCount: baseStats.invalid_count,
+      statusCounts: {
+        INREVIEW: statusStats.inreview_count,
+        RESOLVED: statusStats.resolved_count,
+        IGNORED: statusStats.ignored_count,
+        MARKED: statusStats.marked_count,
+      },
+      reviewResultCounts: {
+        pass: reviewResultStats.pass_count,
+        fail: reviewResultStats.fail_count,
+        unclear: reviewResultStats.unclear_count,
+      },
+      qualityMetrics: {
+        falsePositiveRate: qualityMetrics.false_positive_rate,
+        falseNegativeRate: qualityMetrics.false_negative_rate,
+        accuracy: qualityMetrics.accuracy,
+      },
+      timeRange: {
+        startTime,
+        endTime,
+        duration,
+      },
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`获取质量记录统计信息失败: ${errorMessage}`);
+    throw error;
+  }
+}
+
 export function getDbInstance(...args: any[]): any {
   logger.warn("getDbInstance: " + NOT_IMPLEMENTED_ERROR);
   return null;
