@@ -213,6 +213,12 @@ const defaultParameters = [
       },
     },
   },
+  {
+    key: "pipeMeasurement",
+    value: {
+      offset: 0,
+    },
+  },
 ];
 
 /**
@@ -472,4 +478,82 @@ export async function deleteParameter(key: string): Promise<number> {
       }
     );
   });
+}
+
+/**
+ * 从 defaultParameters 中查找参数的默认值
+ */
+function getDefaultParameterValue(key: string): any | undefined {
+  const defaultParam = defaultParameters.find((param) => param.key === key);
+  return defaultParam?.value;
+}
+
+/**
+ * 获取参数，如果不存在且在defaultParameters中有定义，则创建默认值
+ */
+export async function getParameterOrCreate(key: string): Promise<any> {
+  try {
+    const doc = await getParameter(key);
+
+    if (!doc) {
+      // 参数不存在，查找默认值
+      const defaultValue = getDefaultParameterValue(key);
+
+      if (defaultValue !== undefined) {
+        // 在 defaultParameters 中找到了，创建默认值
+        logger.info(`参数 ${key} 不存在，从 defaultParameters 创建默认值`);
+        await saveParameter(key, defaultValue);
+        return defaultValue;
+      }
+
+      // 没有默认值定义，返回 null
+      logger.warn(`参数 ${key} 不存在且无默认值定义`);
+      return null;
+    }
+
+    return doc.value;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`获取或创建参数失败: ${errorMessage}`);
+    throw error;
+  }
+}
+
+/**
+ * 获取嵌套参数，如果参数不存在且在defaultParameters中有定义，则创建默认值
+ */
+export async function getNestedParameterOrCreate(
+  key: string,
+  nestedPath: string
+): Promise<any> {
+  try {
+    const doc = await getParameter(key);
+
+    if (!doc) {
+      // 参数不存在，查找默认值
+      const defaultValue = getDefaultParameterValue(key);
+
+      if (defaultValue !== undefined) {
+        // 在 defaultParameters 中找到了，创建完整对象
+        logger.info(`参数 ${key} 不存在，从 defaultParameters 创建默认值`);
+        await saveParameter(key, defaultValue);
+
+        // 返回嵌套路径的值
+        const nestedValue = getValueByPath(defaultValue, nestedPath);
+        return nestedValue !== undefined ? nestedValue : null;
+      }
+
+      // 没有默认值定义，返回 null
+      logger.warn(`参数 ${key} 不存在且无默认值定义`);
+      return null;
+    }
+
+    // 参数存在，返回嵌套值
+    const value = getValueByPath(doc.value, nestedPath);
+    return value !== undefined ? value : null;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`获取或创建嵌套参数失败: ${errorMessage}`);
+    throw error;
+  }
 }
