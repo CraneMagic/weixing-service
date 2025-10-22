@@ -11,6 +11,8 @@ import {
   optimize,
   sendUdpData,
   downloadMeasurementsCsv,
+  getNonCompliant,
+  getNonCompliantStatsBySpecController,
 } from "../controllers/measurementController";
 
 const router = Router();
@@ -22,6 +24,10 @@ router.post("/", createMeasurement);
 router.get("/stats/compliance", getCompliance);
 router.get("/stats/specs", getSpecStats);
 router.get("/stats/trend", getTrend);
+router.get(
+  "/stats/non-compliant-by-spec",
+  getNonCompliantStatsBySpecController
+);
 router.post("/maintenance/cleanup", cleanup);
 router.post("/maintenance/optimize", optimize);
 
@@ -31,6 +37,9 @@ router.get("/csv", downloadMeasurementsCsv);
 
 // 获取最近的测量数据
 router.get("/recent", getRecentData);
+
+// 获取不合格测量记录
+router.get("/non-compliant", getNonCompliant);
 
 // 获取单条测量数据（放在最后，避免匹配到其他路由）
 router.get("/:id", getMeasurement);

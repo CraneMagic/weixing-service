@@ -1838,3 +1838,157 @@ export function getDbInstance(...args: any[]): any {
   logger.warn("getDbInstance: " + NOT_IMPLEMENTED_ERROR);
   return null;
 }
+
+/**
+ * 获取不合格测量记录
+ */
+export async function getNonCompliantMeasurements(options: {
+  startTime?: string;
+  limit?: number;
+  offset?: number;
+  sortBy?: string;
+  sortOrder?: "ASC" | "DESC";
+}): Promise<{
+  data: any[];
+  total: number;
+  page: number;
+  limit: number;
+}> {
+  const {
+    startTime,
+    limit = 20,
+    offset = 0,
+    sortBy = "timestamp",
+    sortOrder = "DESC",
+  } = options;
+
+  const validSortBy = [
+    "id",
+    "timestamp",
+    "spec_id",
+    "spec_name",
+    "outer_max",
+    "outer_avg",
+    "outer_min",
+    "inner_max",
+    "inner_avg",
+    "inner_min",
+    "wall_max",
+    "wall_avg",
+    "wall_min",
+    "outer_non_circularity",
+    "inner_non_circularity",
+  ];
+  const orderBy = validSortBy.includes(sortBy) ? `"${sortBy}"` : "timestamp";
+  const orderDirection = sortOrder === "ASC" ? "ASC" : "DESC";
+
+  let query = `SELECT * FROM measurements`;
+  let countQuery = `SELECT COUNT(*) as total FROM measurements`;
+  const params: any[] = [];
+  const conditions: string[] = [];
+  let paramIndex = 1;
+
+  // 固定条件：不合格且非校准
+  conditions.push(`is_compliant = 0`);
+  conditions.push(`is_calibration = 0`);
+
+  // 时间条件
+  if (startTime) {
+    conditions.push(`timestamp >= $${paramIndex++}`);
+    params.push(startTime);
+  }
+
+  if (conditions.length > 0) {
+    const whereClause = ` WHERE ${conditions.join(" AND ")}`;
+    query += whereClause;
+    countQuery += whereClause;
+  }
+
+  query += ` ORDER BY ${orderBy} ${orderDirection}`;
+  query += ` LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
+  params.push(limit, offset);
+
+  try {
+    const [dataResult, countResult] = await Promise.all([
+      pool.query(query, params),
+      pool.query(countQuery, params.slice(0, -2)), // 排除limit和offset参数
+    ]);
+
+    const total = parseInt(countResult.rows[0].total, 10);
+    const page = Math.floor(offset / limit) + 1;
+
+    return {
+      data: dataResult.rows,
+      total,
+      page,
+      limit,
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`获取不合格测量记录失败: ${errorMessage}`);
+    throw error;
+  }
+}
+
+/**
+ * 按规格统计不合格测量记录数量
+ */
+export async function getNonCompliantStatsBySpec(startTime?: string): Promise<
+  {
+    specId: string;
+    specName: string;
+    nonCompliantCount: number;
+  }[]
+> {
+  try {
+    // 获取所有规格配置
+    const { getParameter } = await import("./db");
+    const pipeSpecifications = await getParameter("pipeSpecification");
+
+    if (!pipeSpecifications?.value) {
+      logger.warn("未找到规格配置");
+      return [];
+    }
+
+    const allSpecs = Object.keys(pipeSpecifications.value);
+
+    // 查询数据库中的统计数据
+    let statsQuery = `
+      SELECT spec_id, spec_name, COUNT(*) as count
+      FROM measurements
+      WHERE is_compliant = 0 AND is_calibration = 0
+    `;
+    const params: any[] = [];
+
+    if (startTime) {
+      statsQuery += ` AND timestamp >= $1`;
+      params.push(startTime);
+    }
+
+    statsQuery += ` GROUP BY spec_id, spec_name`;
+
+    const statsResult = await pool.query(statsQuery, params);
+    const statsMap = new Map<string, number>();
+
+    statsResult.rows.forEach((row) => {
+      const key = row.spec_id || "unknown";
+      statsMap.set(key, parseInt(row.count, 10));
+    });
+
+    // 构建结果，包含所有规格
+    const result = allSpecs.map((specId) => {
+      const spec = pipeSpecifications.value[specId];
+      return {
+        specId,
+        specName: spec.materialSpec || specId,
+        nonCompliantCount: statsMap.get(specId) || 0,
+      };
+    });
+
+    return result;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`获取不合格统计失败: ${errorMessage}`);
+    throw error;
+  }
+}

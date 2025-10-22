@@ -10,6 +10,8 @@ import {
   cleanupOldData,
   optimizeDatabase,
   getMeasurementsCsv,
+  getNonCompliantMeasurements,
+  getNonCompliantStatsBySpec,
 } from "../services/db-postgres";
 import { getParameter } from "../services/db";
 import { logger } from "../utils/logger";
@@ -517,5 +519,74 @@ export async function sendUdpData(req: Request, res: Response) {
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     logger.error(`发送UDP数据失败: ${errorMessage}`);
+  }
+}
+
+/**
+ * 获取不合格测量记录
+ */
+export async function getNonCompliant(req: Request, res: Response) {
+  try {
+    const {
+      startTime = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+      limit = 20,
+      page = 1,
+      sortBy = "timestamp",
+      sortOrder = "DESC",
+    } = req.query;
+
+    const options = {
+      startTime: startTime as string,
+      limit: parseInt(limit as string, 10),
+      offset:
+        (parseInt(page as string, 10) - 1) * parseInt(limit as string, 10),
+      sortBy: sortBy as string,
+      sortOrder: sortOrder as "ASC" | "DESC",
+    };
+
+    const result = await getNonCompliantMeasurements(options);
+    const transformedData = result.data.map(transformMeasurement);
+
+    return res.status(200).json({
+      success: true,
+      ...result,
+      data: transformedData,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`获取不合格测量记录失败: ${errorMessage}`);
+    return res.status(500).json({
+      success: false,
+      message: `获取失败: ${errorMessage}`,
+    });
+  }
+}
+
+/**
+ * 按规格统计不合格测量记录数量
+ */
+export async function getNonCompliantStatsBySpecController(
+  req: Request,
+  res: Response
+) {
+  try {
+    const startTime =
+      (req.query.startTime as string) ||
+      new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+    const stats = await getNonCompliantStatsBySpec(startTime);
+
+    return res.status(200).json({
+      success: true,
+      data: stats,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`获取不合格统计失败: ${errorMessage}`);
+
+    return res.status(500).json({
+      success: false,
+      message: `获取失败: ${errorMessage}`,
+    });
   }
 }
