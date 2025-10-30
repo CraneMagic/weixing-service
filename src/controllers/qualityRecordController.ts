@@ -1,6 +1,12 @@
 import { Request, Response } from "express";
 import { logger } from "../utils/logger";
 import {
+  isQualityBypassActive,
+  enableBypass,
+  disableBypass,
+  getBypassStateWithRemaining,
+} from "../utils/qualityBypass";
+import {
   saveQualityRecord,
   batchSaveQualityRecords,
   getQualityRecords as getRecords,
@@ -69,7 +75,22 @@ export async function batchCreateQualityRecords(req: Request, res: Response) {
       });
     }
 
-    const result = await batchSaveQualityRecords(records);
+    // 如果开启了质量检验跳过，则覆盖入库记录的审核结果与状态
+    const bypass = await isQualityBypassActive();
+    const recordsToSave = Array.isArray(records)
+      ? records.map((r: any) =>
+          bypass
+            ? {
+                ...r,
+                review_result: "pass",
+                status: "IGNORED",
+                bypass_reason: "quality-bypass",
+              }
+            : r
+        )
+      : records;
+
+    const result = await batchSaveQualityRecords(recordsToSave);
 
     // 构建响应
     let message = `批量处理完成: 成功 ${result.success} 条, 失败 ${result.failed} 条`;
@@ -121,6 +142,13 @@ export async function createQualityRecord(req: Request, res: Response) {
     //     message: `非 "fail" 记录已跳过保存 (label: ${data.label})`,
     //   });
     // }
+
+    // 若开启质量检验跳过，覆盖本条记录
+    if (await isQualityBypassActive()) {
+      data.review_result = "pass";
+      data.status = "IGNORED";
+      data.bypass_reason = "quality-bypass";
+    }
 
     const result = await saveQualityRecord(data);
 
@@ -1025,5 +1053,48 @@ export async function getQualityRecordsStatistics(
       error: "服务器内部错误",
       message: "统计信息计算失败",
     });
+  }
+}
+
+/**
+ * 启用质量检验跳过
+ */
+export async function enableQualityBypass(req: Request, res: Response) {
+  try {
+    const { durationMinutes } = req.body || {};
+    const state = await enableBypass(durationMinutes);
+    return res.status(200).json({ success: true, data: state });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`启用质量检验跳过失败: ${errorMessage}`);
+    return res.status(500).json({ success: false, message: errorMessage });
+  }
+}
+
+/**
+ * 禁用质量检验跳过
+ */
+export async function disableQualityBypass(req: Request, res: Response) {
+  try {
+    const state = await disableBypass();
+    return res.status(200).json({ success: true, data: state });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`禁用质量检验跳过失败: ${errorMessage}`);
+    return res.status(500).json({ success: false, message: errorMessage });
+  }
+}
+
+/**
+ * 查询质量检验跳过状态
+ */
+export async function getQualityBypassState(req: Request, res: Response) {
+  try {
+    const state = await getBypassStateWithRemaining();
+    return res.status(200).json({ success: true, data: state });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`获取质量检验跳过状态失败: ${errorMessage}`);
+    return res.status(500).json({ success: false, message: errorMessage });
   }
 }

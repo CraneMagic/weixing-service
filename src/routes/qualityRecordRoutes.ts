@@ -21,6 +21,9 @@ import {
   getPendingReviewRecords,
   getFalsePositiveRateStats,
   getQualityRecordsStatistics,
+  enableQualityBypass,
+  disableQualityBypass,
+  getQualityBypassState,
 } from "../controllers/qualityRecordController";
 import { Request, Response } from "express";
 import { checkPoolHealth } from "../services/pg-pool";
@@ -50,6 +53,11 @@ router.post("/batch", batchCreateQualityRecords);
 
 // 创建质量检测记录
 router.post("/", createQualityRecord);
+
+// 质量检验跳过开关与查询
+router.post("/bypass/enable", enableQualityBypass);
+router.post("/bypass/disable", disableQualityBypass);
+router.get("/bypass", getQualityBypassState);
 
 // 批量更新状态
 router.post("/update-status/pass-to-ignored", updatePassToIgnored);
