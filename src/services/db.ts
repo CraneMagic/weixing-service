@@ -201,9 +201,9 @@ const defaultParameters = [
       },
       B: {
         calibrationType: "B",
-        outerDiameterStandardAvgValue: 24.89,
+        outerDiameterStandardAvgValue: 24.98,
         innerDiameterStandardAvgValue: 0,
-        wallThicknessStandardAvgValue: 3.94,
+        wallThicknessStandardAvgValue: 2.48,
       },
       C: {
         calibrationType: "C",
