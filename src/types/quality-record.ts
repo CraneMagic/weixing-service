@@ -29,4 +29,5 @@ export interface QualityRecord {
   review_time?: string; // 审核时间
   reviewer?: string; // 审核人
   review_notes?: string; // 审核备注
+  model_version?: string; // 模型版本
 }
