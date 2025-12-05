@@ -165,6 +165,7 @@ const defaultParameters = [
         exposure: 512,
         gain: 2048,
         awb_mode: 0,
+        wb_gain: [0.134, 0.0625, 0.0625, 0.1239], // 白平衡增益，格式为 [R, Gr, Gb, B] 数组
         luma: 60,
         contrast: 75,
         saturation: 50,
