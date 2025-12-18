@@ -30,4 +30,5 @@ export interface QualityRecord {
   reviewer?: string; // 审核人
   review_notes?: string; // 审核备注
   model_version?: string; // 模型版本
+  has_code?: boolean; // 是否有喷码
 }

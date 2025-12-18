@@ -695,7 +695,7 @@ export async function getQualityRecords(options: {
     frame_id, fis, fps, filename, resolution, size_bytes, size_formatted, 
     jpeg_quality, inference_time_ms, capture_time_ms, jpeg_encode_time_ms, 
     message_id, object_key, status, pc_num, error_path, oss_path, 
-    review_result, review_time, reviewer, review_notes, model_version
+    review_result, review_time, reviewer, review_notes, model_version, has_code
   `
     .replace(/\s+/g, " ")
     .trim();
@@ -1830,6 +1830,135 @@ export async function getQualityRecordsStatistics(options: {
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     logger.error(`获取质量记录统计信息失败: ${errorMessage}`);
+    throw error;
+  }
+}
+
+/**
+ * 获取喷码统计信息
+ * @param options 查询选项
+ * @returns 喷码统计数据
+ */
+export async function getSprayCodeStatistics(options: {
+  pc_num: string;
+  limit?: number;
+  startTime?: string;
+  endTime?: string;
+}): Promise<{
+  pc_num: string;
+  earliestTime: string | null;
+  latestTime: string | null;
+  hasCode: boolean;
+  totalCount: number;
+  codeStatistics: {
+    withCode: number;
+    withoutCode: number;
+    unknown: number;
+  };
+}> {
+  const { pc_num, limit, startTime, endTime } = options;
+
+  // 参数验证
+  if (!pc_num || pc_num.trim() === "") {
+    throw new Error("pc_num 参数是必需的");
+  }
+
+  // 至少需要提供 limit 或时间段
+  if (!limit && (!startTime || !endTime)) {
+    throw new Error("必须提供 limit 或 startTime/endTime 参数");
+  }
+
+  // 构建查询条件
+  const conditions: string[] = [`pc_num = $1`];
+  const params: any[] = [pc_num];
+  let paramIndex = 2;
+
+  // 时间过滤
+  if (startTime && endTime) {
+    conditions.push(`capture_time >= $${paramIndex++}`);
+    conditions.push(`capture_time <= $${paramIndex++}`);
+    params.push(startTime, endTime);
+  }
+
+  const whereClause = conditions.join(" AND ");
+
+  // 构建查询：如果需要限制记录数，使用CTE先筛选记录
+  let statsQuery = "";
+  let queryParams: any[] = [];
+  
+  if (limit) {
+    // 使用CTE先获取最近的limit条记录，然后统计
+    statsQuery = `
+      WITH filtered_records AS (
+        SELECT client_ip, timestamp, capture_time, has_code
+        FROM quality_records
+        WHERE ${whereClause}
+        ORDER BY capture_time DESC
+        LIMIT $${paramIndex}
+      )
+      SELECT 
+        COUNT(*)::int AS total_count,
+        COUNT(*) FILTER (WHERE has_code = true)::int AS with_code,
+        COUNT(*) FILTER (WHERE has_code = false)::int AS without_code,
+        COUNT(*) FILTER (WHERE has_code IS NULL)::int AS unknown,
+        MIN(capture_time) AS earliest_time,
+        MAX(capture_time) AS latest_time,
+        BOOL_OR(has_code = true) AS has_code
+      FROM filtered_records
+    `;
+    queryParams = [...params, limit];
+  } else {
+    // 直接统计，不需要限制记录数
+    statsQuery = `
+      SELECT 
+        COUNT(*)::int AS total_count,
+        COUNT(*) FILTER (WHERE has_code = true)::int AS with_code,
+        COUNT(*) FILTER (WHERE has_code = false)::int AS without_code,
+        COUNT(*) FILTER (WHERE has_code IS NULL)::int AS unknown,
+        MIN(capture_time) AS earliest_time,
+        MAX(capture_time) AS latest_time,
+        BOOL_OR(has_code = true) AS has_code
+      FROM quality_records
+      WHERE ${whereClause}
+    `;
+    queryParams = params;
+  }
+
+  try {
+    const { rows } = await pool.query(statsQuery, queryParams);
+
+    if (rows.length === 0 || !rows[0].total_count) {
+      // 没有记录，返回默认值
+      return {
+        pc_num,
+        earliestTime: null,
+        latestTime: null,
+        hasCode: false,
+        totalCount: 0,
+        codeStatistics: {
+          withCode: 0,
+          withoutCode: 0,
+          unknown: 0,
+        },
+      };
+    }
+
+    const row = rows[0];
+    return {
+      pc_num,
+      earliestTime: row.earliest_time ? row.earliest_time.toISOString() : null,
+      latestTime: row.latest_time ? row.latest_time.toISOString() : null,
+      hasCode: row.has_code === true,
+      totalCount: parseInt(row.total_count, 10),
+      codeStatistics: {
+        withCode: parseInt(row.with_code, 10),
+        withoutCode: parseInt(row.without_code, 10),
+        unknown: parseInt(row.unknown, 10),
+      },
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`获取喷码统计信息失败: ${errorMessage}`);
     throw error;
   }
 }

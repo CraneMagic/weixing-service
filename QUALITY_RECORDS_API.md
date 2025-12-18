@@ -34,6 +34,7 @@ interface QualityRecord {
   pc_num?: string; // 工控机编号
   error_path?: string | null; // 错误图片路径（仅fail标签有值）
   oss_path?: string | null; // OSS上传路径
+  has_code?: boolean; // 是否有喷码
 }
 ```
 
@@ -42,6 +43,7 @@ interface QualityRecord {
 - **`error_path`**: 错误图片路径，仅当 `label = "fail"` 时有值，其他情况为 `null`
 - **`oss_path`**: OSS 上传路径，根据上传策略决定是否有值
 - **`object_key`**: 临时文件夹路径，保持向后兼容
+- **`has_code`**: 是否有喷码，布尔值，`true` 表示有喷码，`false` 表示无喷码，`null` 表示未设置
 
 ## API 接口
 

@@ -125,6 +125,7 @@ export async function initializePostgresDB(): Promise<void> {
         reviewer TEXT,
         review_notes TEXT,
         model_version TEXT,
+        has_code BOOLEAN,
         PRIMARY KEY (client_ip, timestamp)
       )
     `);
@@ -139,6 +140,7 @@ export async function initializePostgresDB(): Promise<void> {
       { name: "reviewer", type: "TEXT" },
       { name: "review_notes", type: "TEXT" },
       { name: "model_version", type: "TEXT" },
+      { name: "has_code", type: "BOOLEAN" },
     ];
 
     for (const col of newQualityColumns) {

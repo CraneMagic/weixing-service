@@ -22,6 +22,7 @@ import {
   getFalsePositiveRateStats as getFalsePositiveRateStatsService,
   getPendingReviewRecords as getPendingReviewRecordsService,
   getQualityRecordsStatistics as getStatisticsService,
+  getSprayCodeStatistics as getSprayCodeStatisticsService,
 } from "../services/db-postgres";
 import {
   getImagePath,
@@ -1096,5 +1097,120 @@ export async function getQualityBypassState(req: Request, res: Response) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     logger.error(`获取质量检验跳过状态失败: ${errorMessage}`);
     return res.status(500).json({ success: false, message: errorMessage });
+  }
+}
+
+/**
+ * 获取喷码统计信息
+ */
+export async function getSprayCodeStatistics(
+  req: Request,
+  res: Response
+): Promise<Response> {
+  try {
+    const { pc_num, limit, startTime, endTime } = req.query;
+
+    // 验证必需参数
+    if (!pc_num) {
+      return res.status(400).json({
+        success: false,
+        error: "缺少必需参数",
+        message: "pc_num 参数是必需的",
+      });
+    }
+
+    // 验证至少提供一种查询方式
+    if (!limit && (!startTime || !endTime)) {
+      return res.status(400).json({
+        success: false,
+        error: "缺少查询条件",
+        message: "必须提供 limit 或 startTime/endTime 参数",
+      });
+    }
+
+    // 验证时间格式（如果提供）
+    if (startTime || endTime) {
+      if (!startTime || !endTime) {
+        return res.status(400).json({
+          success: false,
+          error: "时间参数不完整",
+          message: "startTime 和 endTime 必须同时提供",
+        });
+      }
+
+      const startTimeDate = new Date(startTime as string);
+      const endTimeDate = new Date(endTime as string);
+
+      if (isNaN(startTimeDate.getTime()) || isNaN(endTimeDate.getTime())) {
+        return res.status(400).json({
+          success: false,
+          error: "时间格式错误",
+          message: "startTime 和 endTime 必须是有效的 ISO 8601 格式时间",
+        });
+      }
+
+      // 检查时间范围不超过30天
+      const timeDiffMs = endTimeDate.getTime() - startTimeDate.getTime();
+      const maxTimeDiffMs = 30 * 24 * 60 * 60 * 1000; // 30天
+      if (timeDiffMs > maxTimeDiffMs) {
+        return res.status(400).json({
+          success: false,
+          error: "时间范围过大",
+          message: "查询时间范围不能超过30天",
+        });
+      }
+
+      if (timeDiffMs < 0) {
+        return res.status(400).json({
+          success: false,
+          error: "时间范围错误",
+          message: "startTime 必须早于 endTime",
+        });
+      }
+    }
+
+    // 验证 limit（如果提供）
+    let limitNum: number | undefined;
+    if (limit) {
+      limitNum = parseInt(limit as string, 10);
+      if (isNaN(limitNum) || limitNum <= 0) {
+        return res.status(400).json({
+          success: false,
+          error: "参数错误",
+          message: "limit 必须是大于0的整数",
+        });
+      }
+      // 限制最大查询数量
+      const MAX_LIMIT = 10000;
+      if (limitNum > MAX_LIMIT) {
+        return res.status(400).json({
+          success: false,
+          error: "参数错误",
+          message: `limit 不能超过 ${MAX_LIMIT}`,
+        });
+      }
+    }
+
+    const options = {
+      pc_num: pc_num as string,
+      limit: limitNum,
+      startTime: startTime as string | undefined,
+      endTime: endTime as string | undefined,
+    };
+
+    const result = await getSprayCodeStatisticsService(options);
+
+    return res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`获取喷码统计信息失败: ${errorMessage}`);
+    return res.status(500).json({
+      success: false,
+      error: "服务器内部错误",
+      message: `获取喷码统计信息失败: ${errorMessage}`,
+    });
   }
 }

@@ -24,6 +24,7 @@ import {
   enableQualityBypass,
   disableQualityBypass,
   getQualityBypassState,
+  getSprayCodeStatistics,
 } from "../controllers/qualityRecordController";
 import { Request, Response } from "express";
 import { checkPoolHealth } from "../services/pg-pool";
@@ -89,6 +90,9 @@ router.get("/stats/false-positive-rate", getFalsePositiveRateStats);
 
 // 统计信息路由
 router.get("/statistics", getQualityRecordsStatistics);
+
+// 喷码统计路由
+router.get("/spray-code-stats", getSprayCodeStatistics);
 
 // 添加连接池状态监控端点
 router.get("/pool-status", async (req: Request, res: Response) => {
