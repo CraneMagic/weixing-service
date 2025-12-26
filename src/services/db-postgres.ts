@@ -695,7 +695,7 @@ export async function getQualityRecords(options: {
     frame_id, fis, fps, filename, resolution, size_bytes, size_formatted, 
     jpeg_quality, inference_time_ms, capture_time_ms, jpeg_encode_time_ms, 
     message_id, object_key, status, pc_num, error_path, oss_path, 
-    review_result, review_time, reviewer, review_notes, model_version, has_code
+    review_result, review_time, reviewer, review_notes, model_version, has_code, code_confidence
   `
     .replace(/\s+/g, " ")
     .trim();
@@ -1158,7 +1158,7 @@ export async function updateReviewResult(
     frame_id, fis, fps, filename, resolution, size_bytes, size_formatted, 
     jpeg_quality, inference_time_ms, capture_time_ms, jpeg_encode_time_ms, 
     message_id, object_key, status, pc_num, error_path, oss_path, 
-    review_result, review_time, reviewer, review_notes, model_version
+    review_result, review_time, reviewer, review_notes, model_version, has_code, code_confidence
   `
     .replace(/\s+/g, " ")
     .trim();
