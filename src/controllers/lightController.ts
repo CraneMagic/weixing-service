@@ -1,5 +1,10 @@
 import { Request, Response } from "express";
-import { sendHexCommand, SerialPortType } from "../services/serial";
+import {
+  sendHexCommand,
+  SerialPortType,
+  turnOnRelay2,
+  turnOffRelay2,
+} from "../services/serial";
 import { logger } from "../utils/logger";
 
 /**
@@ -16,11 +21,14 @@ export async function setNormalState(req: Request, res: Response) {
     // 打开绿灯: A0 02 01 A3
     await sendHexCommand([0xa0, 0x02, 0x01, 0xa3], SerialPortType.ALARM);
 
-    logger.info("已切换到正常状态: 绿灯开，红灯关");
+    // 关闭继电器2: A0 02 00 A2
+    await turnOffRelay2();
+
+    logger.info("已切换到正常状态: 绿灯开，红灯关，继电器2关");
 
     return res.status(200).json({
       success: true,
-      message: "已切换到正常状态: 绿灯开，红灯关",
+      message: "已切换到正常状态: 绿灯开，红灯关，继电器2关",
     });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -49,11 +57,14 @@ export async function setAlarmState(req: Request, res: Response) {
       await sendHexCommand([0xa0, 0x07, 0x01, 0xa8], SerialPortType.ALARM);
     }
 
-    logger.info("已切换到报警状态: 红灯开，绿灯关");
+    // 打开继电器2: A0 02 01 A3
+    await turnOnRelay2();
+
+    logger.info("已切换到报警状态: 红灯开，绿灯关，继电器2开");
 
     return res.status(200).json({
       success: true,
-      message: "已切换到报警状态: 红灯开，绿灯关",
+      message: "已切换到报警状态: 红灯开，绿灯关，继电器2开",
     });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);

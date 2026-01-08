@@ -326,6 +326,24 @@ export async function turnOnCameraPower(): Promise<boolean> {
 }
 
 /**
+ * 打开继电器2
+ * 发送命令: A0 02 01 A3
+ */
+export async function turnOnRelay2(): Promise<boolean> {
+  const command = [0xa0, 0x02, 0x01, 0xa3];
+  return await sendHexCommand(command, SerialPortType.RELAY);
+}
+
+/**
+ * 关闭继电器2
+ * 发送命令: A0 02 00 A2
+ */
+export async function turnOffRelay2(): Promise<boolean> {
+  const command = [0xa0, 0x02, 0x00, 0xa2];
+  return await sendHexCommand(command, SerialPortType.RELAY);
+}
+
+/**
  * 解析相机供电状态响应
  * @param data 串口返回的数据
  */
