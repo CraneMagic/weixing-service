@@ -306,6 +306,34 @@ const defaultParameters = [
       offset: 0,
     },
   },
+  {
+    key: "computerVisionCalibrationFactors",
+    value: {
+      "0": 0.0416,
+      "1": 0.0493,
+      "2": 0.0478,
+    },
+  },
+  {
+    key: "computerVisionBaselineMat",
+    value: {
+      Dref_mm: 25.0,
+      xc0_px: [601.1574190889233, 565.8819005869678, 637.7255914944594],
+      w0_px: [522.6642010069755, 495.2844233945097, 505.2114915357633],
+      s0_mm_per_px: [0.047831858297994176, 0.05047604733590967, 0.049484226742356835],
+      Z0_mm: [200.0, 200.0, 200.0],
+      k_px_per_mm: [],
+      dxSign: [1.0, 1.0, 1.0],
+      camIPList: ["192.168.1.160", "192.168.1.161", "192.168.1.162"],
+      nFramesUsed: [8, 9, 7],
+      timestamp: "2026-01-08 23:02:05",
+      vp_opts: {
+        gray_mode: "rgb2gray",
+        otsu_step: 2,
+        minWidthPx: 20.0,
+      },
+    },
+  },
 ];
 
 /**

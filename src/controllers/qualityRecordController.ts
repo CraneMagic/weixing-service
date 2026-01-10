@@ -23,6 +23,8 @@ import {
   getPendingReviewRecords as getPendingReviewRecordsService,
   getQualityRecordsStatistics as getStatisticsService,
   getSprayCodeStatistics as getSprayCodeStatisticsService,
+  getQualityRecordByFilename,
+  updateCVResult,
 } from "../services/db-postgres";
 import {
   getImagePath,
@@ -1211,6 +1213,105 @@ export async function getSprayCodeStatistics(
       success: false,
       error: "服务器内部错误",
       message: `获取喷码统计信息失败: ${errorMessage}`,
+    });
+  }
+}
+
+/**
+ * 根据本地文件名查询质量检测记录
+ */
+export async function getQualityRecordByFilenameController(
+  req: Request,
+  res: Response
+) {
+  try {
+    const { filename } = req.params;
+
+    if (!filename) {
+      return res.status(400).json({
+        success: false,
+        message: "缺少 filename 参数",
+      });
+    }
+
+    const data = await getQualityRecordByFilename(filename);
+
+    if (!data) {
+      return res.status(404).json({
+        success: false,
+        message: `未找到文件名为 "${filename}" 的质量检测记录`,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`根据文件名获取质量检测记录失败: ${errorMessage}`);
+    return res.status(500).json({
+      success: false,
+      message: `获取失败: ${errorMessage}`,
+    });
+  }
+}
+
+/**
+ * 更新质量检测记录的 CV 结果
+ */
+export async function updateCVResultController(req: Request, res: Response) {
+  try {
+    const { filename } = req.params;
+    const { cv_result } = req.body;
+
+    if (!filename) {
+      return res.status(400).json({
+        success: false,
+        message: "缺少 filename 参数",
+      });
+    }
+
+    if (!cv_result || typeof cv_result !== "object") {
+      return res.status(400).json({
+        success: false,
+        message: "缺少或无效的 cv_result 字段（应为 JSON 对象）",
+      });
+    }
+
+    // 首先检查记录是否存在
+    const existingRecord = await getQualityRecordByFilename(filename);
+    if (!existingRecord) {
+      return res.status(404).json({
+        success: false,
+        message: `未找到文件名为 "${filename}" 的质量检测记录`,
+      });
+    }
+
+    // 更新 CV 结果
+    const result = await updateCVResult(filename, cv_result);
+
+    if (result.updated === 0) {
+      return res.status(500).json({
+        success: false,
+        message: "更新失败，未能更新记录",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "CV 结果更新成功",
+      data: {
+        filename,
+        updated: result.updated,
+      },
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`更新 CV 结果失败: ${errorMessage}`);
+    return res.status(500).json({
+      success: false,
+      message: `更新失败: ${errorMessage}`,
     });
   }
 }

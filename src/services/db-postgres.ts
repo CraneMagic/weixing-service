@@ -1058,7 +1058,63 @@ export async function deleteQualityRecord(
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     logger.error(
-      `Failed to delete quality record in PostgreSQL: ${errorMessage}`
+      `Error deleting quality record from PostgreSQL: ${errorMessage}`
+    );
+    throw error;
+  }
+}
+
+/**
+ * 根据本地文件名查询质量检测记录
+ * @param filename 本地文件名
+ * @returns 质量检测记录或 null
+ */
+export async function getQualityRecordByFilename(
+  filename: string
+): Promise<QualityRecord | null> {
+  const sql = `SELECT * FROM quality_records WHERE filename = $1 LIMIT 1`;
+  try {
+    const result = await pool.query(sql, [filename]);
+    if (result.rows.length === 0) {
+      return null;
+    }
+    return result.rows[0] as QualityRecord;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(
+      `Error getting quality record by filename from PostgreSQL: ${errorMessage}`
+    );
+    throw error;
+  }
+}
+
+/**
+ * 更新质量检测记录的 CV 结果
+ * @param filename 本地文件名
+ * @param cvResult CV 计算结果（JSON 对象）
+ * @returns 更新的记录数
+ */
+export async function updateCVResult(
+  filename: string,
+  cvResult: Record<string, any>
+): Promise<{ updated: number }> {
+  const sql = `
+    UPDATE quality_records
+    SET cv_result = $1
+    WHERE filename = $2
+  `;
+  try {
+    const result = await pool.query(sql, [JSON.stringify(cvResult), filename]);
+    if (result.rowCount && result.rowCount > 0) {
+      logger.debug(
+        `CV result updated for filename: ${filename}`
+      );
+    }
+    return { updated: result.rowCount || 0 };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(
+      `Error updating CV result in PostgreSQL: ${errorMessage}`
     );
     throw error;
   }

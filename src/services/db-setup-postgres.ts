@@ -143,6 +143,7 @@ export async function initializePostgresDB(): Promise<void> {
       { name: "model_version", type: "TEXT" },
       { name: "has_code", type: "BOOLEAN" },
       { name: "code_confidence", type: "REAL" },
+      { name: "cv_result", type: "JSONB" },
     ];
 
     for (const col of newQualityColumns) {
@@ -249,6 +250,11 @@ export async function initializePostgresDB(): Promise<void> {
         name: "idx_quality_records_pc_num",
         table: "quality_records",
         column: "pc_num",
+      },
+      {
+        name: "idx_quality_records_filename",
+        table: "quality_records",
+        column: "filename",
       },
       // 复合索引：常用查询组合
       {
