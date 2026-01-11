@@ -368,23 +368,40 @@ export function initializeDatabase(): void {
 }
 
 /**
- * 初始化默认参数
+ * 初始化默认参数（增量创建缺失的 key）
  */
 async function initializeDefaultParameters(): Promise<void> {
   try {
-    // 检查是否已经初始化过
     const count = await countParameters();
-    if (count === 0) {
-      logger.info("正在初始化默认参数...");
 
-      // 插入默认参数
+    if (count === 0) {
+      // 数据库为空，初始化所有默认参数
+      logger.info("正在初始化默认参数...");
       for (const param of defaultParameters) {
         await saveParameter(param.key, param.value);
       }
-
       logger.info(`已成功初始化${defaultParameters.length}个默认参数`);
     } else {
-      logger.info(`数据库中已有${count}个参数，跳过默认参数初始化`);
+      // 数据库已有数据，检查并补充缺失的默认参数
+      let createdCount = 0;
+      const missingKeys: string[] = [];
+
+      for (const param of defaultParameters) {
+        const existing = await getParameter(param.key);
+        if (!existing) {
+          missingKeys.push(param.key);
+          await saveParameter(param.key, param.value);
+          createdCount++;
+        }
+      }
+
+      if (createdCount > 0) {
+        logger.info(
+          `已自动补充 ${createdCount} 个缺失的默认参数: ${missingKeys.join(", ")}`
+        );
+      } else {
+        logger.info(`数据库中已有${count}个参数，所有默认参数均存在`);
+      }
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
