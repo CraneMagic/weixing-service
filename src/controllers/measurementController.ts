@@ -455,7 +455,6 @@ export async function downloadMeasurementsCsv(req: Request, res: Response) {
 
     const rows = await getMeasurementsCsv(options);
 
-    // 定义 CSV 列顺序
     const headers = [
       "id",
       "timestamp",
@@ -478,39 +477,42 @@ export async function downloadMeasurementsCsv(req: Request, res: Response) {
       "calibration_index",
     ];
 
-    const escape = (value: any): string => {
+    const escapeCsvField = (value: any): string => {
       if (value === null || value === undefined) return "";
-      let str =
-        typeof value === "object" ? JSON.stringify(value) : String(value);
-      str = str.replace(/"/g, '""');
-      if (str.includes(",") || str.includes("\n") || str.includes("\r")) {
-        str = `"${str}"`;
+      const str = typeof value === "object" ? JSON.stringify(value) : String(value);
+      if (str.includes('"') || str.includes(",") || str.includes("\n") || str.includes("\r")) {
+        return `"${str.replace(/"/g, '""')}"`;
       }
       return str;
     };
 
-    const csvLines = [headers.join(",")];
-    for (const row of rows) {
-      const line = headers.map((h) => escape((row as any)[h])).join(",");
-      csvLines.push(line);
-    }
-
-    const iso = new Date().toISOString().replace(/[-:]/g, "").split(".")[0]; // e.g., 20250618T083045
+    const iso = new Date().toISOString().replace(/[-:]/g, "").split(".")[0];
     const filename = `measurements_${iso}.csv`;
 
-    res.setHeader("Content-Type", "text/csv");
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
     res.setHeader(
       "Content-Disposition",
-      `attachment; filename=\"${filename}\"`
+      `attachment; filename="${filename}"`
     );
-    res.status(200).send(csvLines.join("\n"));
+    res.status(200);
+
+    // UTF-8 BOM，确保 Excel 正确识别中文编码
+    res.write("\uFEFF");
+    // 流式写入：逐行写入避免在内存中拼装完整 CSV
+    res.write(headers.join(",") + "\n");
+    for (const row of rows) {
+      res.write(headers.map((h) => escapeCsvField((row as any)[h])).join(",") + "\n");
+    }
+    res.end();
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     logger.error(`导出测量数据失败: ${errorMessage}`);
-    res.status(500).json({
-      success: false,
-      message: `导出失败: ${errorMessage}`,
-    });
+    if (!res.headersSent) {
+      res.status(500).json({
+        success: false,
+        message: `导出失败: ${errorMessage}`,
+      });
+    }
   }
 }
 

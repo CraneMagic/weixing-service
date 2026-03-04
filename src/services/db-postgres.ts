@@ -275,7 +275,17 @@ export async function getMeasurementsCsv(options: {
   const orderBy = validSortBy.includes(sortBy) ? `"${sortBy}"` : "timestamp";
   const orderDirection = sortOrder === "ASC" ? "ASC" : "DESC";
 
-  let query = `SELECT * FROM measurements`;
+  const csvColumns = [
+    "id", "timestamp", "spec_id", "spec_name",
+    "outer_max", "outer_avg", "outer_min",
+    "inner_max", "inner_avg", "inner_min",
+    "wall_max", "wall_avg", "wall_min",
+    "outer_non_circularity", "inner_non_circularity",
+    "is_compliant", "is_calibration",
+    "calibration_type", "calibration_index",
+  ];
+
+  let query = `SELECT ${csvColumns.map((c) => `"${c}"`).join(", ")} FROM measurements`;
   const params: any[] = [];
   const conditions: string[] = [];
   let paramIndex = 1;
