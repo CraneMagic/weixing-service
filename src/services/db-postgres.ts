@@ -15,15 +15,16 @@ export async function saveMeasurement(data: any, specInfo?: any): Promise<any> {
     timestamp,
     specId,
     correctedData,
-    caculatedData, // from the flattened object provided by user
+    caculatedData,
     resultData,
-    isCompliant, // assuming it's pre-calculated and passed in `data`
+    isCompliant,
     isCalibration,
     calibrationType,
     calibrationIndex,
+    rgbData,
+    temperatureData,
   } = data;
 
-  // 标准化 isCalibration，只允许运行 0/1
   const isCalibrationNormalized =
     isCalibration === 1 || isCalibration === "1" || isCalibration === true
       ? 1
@@ -37,14 +38,15 @@ export async function saveMeasurement(data: any, specInfo?: any): Promise<any> {
       wall_max, wall_avg, wall_min, 
       outer_non_circularity, inner_non_circularity, 
       is_compliant, is_calibration, calibration_type, calibration_index, 
-      corrected_data, calculated_data
+      corrected_data, calculated_data,
+      rgb_data, temperature_data
     ) VALUES (
-      $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20
+      $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
     ) RETURNING *;
   `;
 
   const values = [
-    timestamp, // Already in ISO format
+    timestamp,
     specId,
     specInfo?.name,
     resultData?.outerStats?.max,
@@ -63,7 +65,9 @@ export async function saveMeasurement(data: any, specInfo?: any): Promise<any> {
     calibrationType,
     calibrationIndex,
     correctedData,
-    caculatedData, // Map incoming `caculatedData` to `calculated_data` column
+    caculatedData,
+    rgbData ?? null,
+    temperatureData ?? null,
   ];
 
   try {

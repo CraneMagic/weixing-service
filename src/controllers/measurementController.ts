@@ -111,6 +111,8 @@ function transformMeasurement(record: any) {
     is_calibration,
     calibration_type,
     calibration_index,
+    rgb_data,
+    temperature_data,
   } = record;
 
   return {
@@ -167,6 +169,8 @@ function transformMeasurement(record: any) {
       outerNonCircularity: outer_non_circularity,
       innerNonCircularity: inner_non_circularity,
     },
+    rgbData: rgb_data ?? null,
+    temperatureData: temperature_data ?? null,
   };
 }
 
