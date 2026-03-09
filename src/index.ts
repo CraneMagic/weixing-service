@@ -122,6 +122,14 @@ async function startApplication() {
           error: "SKIP_DATABASE_VALIDATION 模式已启用，数据库相关API不可用",
         });
       });
+
+      app.use("/api/baseline", (req, res) => {
+        res.status(503).json({
+          success: false,
+          message: "数据库功能已禁用",
+          error: "SKIP_DATABASE_VALIDATION 模式已启用，数据库相关API不可用",
+        });
+      });
     } else {
       // 正常模式，注册所有路由
       logger.info("🔌 注册所有路由...");
@@ -134,6 +142,7 @@ async function startApplication() {
       app.use("/api/quality-records", qualityRecordRoutes);
       app.use("/api/baseline", baselineRoutes);
       app.use("/api/network", networkScanRoutes);
+      app.use("/api/baseline", baselineRoutes);
     }
 
     // 健康检查路由

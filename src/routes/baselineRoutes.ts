@@ -2,78 +2,53 @@ import { Router, Request, Response } from "express";
 import { saveParameter } from "../services/db";
 import { logger } from "../utils/logger";
 
+const CV_SERVICE_URL =
+  process.env.CV_SERVICE_URL || "http://weixing-cv:3001";
+
 const router = Router();
 
-const CV_CALIBRATION_URL =
-  process.env.CV_CALIBRATION_URL || "http://weixing-cv:3001";
-
-/**
- * POST /api/baseline/run-calibration
- *
- * 1. 调用 CV 服务的 /run-baseline-calibration 获取新的 baseline 值
- * 2. 将新 baseline 写入 parameters (computerVisionBaselineMat)
- */
 router.post("/run-calibration", async (req: Request, res: Response) => {
   try {
-    const cvUrl = `${CV_CALIBRATION_URL}/run-baseline-calibration`;
-    logger.info(`调用 CV 标定: ${cvUrl}`);
+    logger.info("收到 baseline 标定请求，转发至 CV 服务...");
 
-    // 转发请求体（如 min_images_per_camera: 10）
-    const body = req.body && typeof req.body === "object" ? req.body : {};
-    const cvResponse = await fetch(cvUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(120000), // 120s 超时（多帧标定更耗时）
-    });
+    const response = await fetch(
+      `${CV_SERVICE_URL}/run-baseline-calibration`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(req.body),
+        signal: AbortSignal.timeout(120_000),
+      }
+    );
 
-    if (!cvResponse.ok) {
-      const text = await cvResponse.text();
-      throw new Error(`CV 服务返回 ${cvResponse.status}: ${text}`);
+    const data = await response.json();
+
+    if (!response.ok) {
+      logger.warn(`CV 服务返回错误: ${response.status}`);
+      return res.status(response.status).json(data);
     }
 
-    const cvData = await cvResponse.json();
-
-    if (!cvData.success || !cvData.baseline) {
-      const errMsg = cvData.error || "CV 标定失败";
-      logger.error(`CV 标定失败: ${errMsg}`);
-      return res.status(400).json({
-        success: false,
-        error: errMsg,
-      });
+    // 标定成功 → 将新 baseline 写回 NeDB
+    if (data.success && data.baseline) {
+      try {
+        await saveParameter("computerVisionBaselineMat", data.baseline);
+        logger.info("新 baseline 已写入数据库");
+      } catch (dbErr) {
+        const dbMsg =
+          dbErr instanceof Error ? dbErr.message : String(dbErr);
+        logger.error(`baseline 写入数据库失败: ${dbMsg}`);
+        // 标定本身成功，DB 写入失败不阻断返回
+        data.db_warning = "标定成功但写入数据库失败，请手动刷新";
+      }
     }
 
-    const baseline = cvData.baseline;
-
-    // 写入 parameters
-    await saveParameter("computerVisionBaselineMat", baseline);
-
-    logger.info("Baseline 已更新并写入数据库");
-    return res.json({
-      success: true,
-      message: "Baseline 标定完成并已保存",
-      baseline,
-    });
+    return res.json(data);
   } catch (error) {
-    const errMsg = error instanceof Error ? error.message : String(error);
-    logger.error(`Baseline 标定失败: ${errMsg}`);
-
-    // 网络错误（CV 服务不可达）
-    if (
-      errMsg.includes("fetch failed") ||
-      errMsg.includes("ECONNREFUSED") ||
-      errMsg.includes("ETIMEDOUT")
-    ) {
-      return res.status(503).json({
-        success: false,
-        error: `无法连接 CV 标定服务 (${CV_CALIBRATION_URL})，请确认 weixing-cv 已启动`,
-      });
-    }
-
-    return res.status(500).json({
-      success: false,
-      error: errMsg,
-    });
+    const msg = error instanceof Error ? error.message : String(error);
+    logger.error(`baseline 标定转发失败: ${msg}`);
+    return res
+      .status(502)
+      .json({ success: false, error: `CV 服务请求失败: ${msg}` });
   }
 });
 
