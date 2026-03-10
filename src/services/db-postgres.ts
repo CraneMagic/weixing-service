@@ -95,64 +95,6 @@ export async function saveMeasurement(data: any, specInfo?: any): Promise<any> {
     safeJsonb(rgbData),
     safeJsonb(temperatureData),
   ];
-  const {
-    timestamp,
-    specId,
-    correctedData,
-    caculatedData,
-    resultData,
-    isCompliant,
-    isCalibration,
-    calibrationType,
-    calibrationIndex,
-    rgbData,
-    temperatureData,
-  } = data;
-
-  const isCalibrationNormalized =
-    isCalibration === 1 || isCalibration === "1" || isCalibration === true
-      ? 1
-      : 0;
-
-  const sql = `
-    INSERT INTO measurements (
-      timestamp, spec_id, spec_name, 
-      outer_max, outer_avg, outer_min, 
-      inner_max, inner_avg, inner_min, 
-      wall_max, wall_avg, wall_min, 
-      outer_non_circularity, inner_non_circularity, 
-      is_compliant, is_calibration, calibration_type, calibration_index, 
-      corrected_data, calculated_data,
-      rgb_data, temperature_data
-    ) VALUES (
-      $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
-    ) RETURNING *;
-  `;
-
-  const values = [
-    timestamp,
-    specId,
-    specInfo?.name,
-    resultData?.outerStats?.max,
-    resultData?.outerStats?.avg,
-    resultData?.outerStats?.min,
-    resultData?.innerStats?.max,
-    resultData?.innerStats?.avg,
-    resultData?.innerStats?.min,
-    resultData?.wallStats?.max,
-    resultData?.wallStats?.avg,
-    resultData?.wallStats?.min,
-    resultData?.outerNonCircularity,
-    resultData?.innerNonCircularity,
-    isCompliant,
-    isCalibrationNormalized,
-    calibrationType,
-    calibrationIndex,
-    correctedData,
-    caculatedData,
-    rgbData ?? null,
-    temperatureData ?? null,
-  ];
 
   try {
     const result = await pool.query(sql, values);
