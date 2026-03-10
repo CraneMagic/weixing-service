@@ -92,8 +92,8 @@ export async function saveMeasurement(data: any, specInfo?: any): Promise<any> {
     calibrationIndex,
     correctedData,
     caculatedData,
-    safeJsonb(rgbData),
-    safeJsonb(temperatureData),
+    null,
+    null,
   ];
 
   try {
