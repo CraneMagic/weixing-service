@@ -117,8 +117,8 @@ export async function saveMeasurement(data: any, specInfo?: any): Promise<any> {
     calibrationIndex,
     correctedData,
     caculatedData,
-    rgbAvg,
-    tempCelsius,
+    rgbAvg ? JSON.stringify(rgbAvg) : null,
+    tempCelsius ? JSON.stringify(tempCelsius) : null,
   ];
 
   try {
