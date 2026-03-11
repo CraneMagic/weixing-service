@@ -51,6 +51,31 @@ export async function saveMeasurement(data: any, specInfo?: any): Promise<any> {
     temperatureData,
   } = data;
 
+  // RGB: 200个采样点 → 三通道平均值 [avg_r, avg_g, avg_b]
+  let rgbAvg: number[] | null = null;
+  if (Array.isArray(rgbData) && rgbData.length > 0) {
+    const len = rgbData.length;
+    const sum = rgbData.reduce(
+      (acc: { r: number; g: number; b: number }, p: { r: number; g: number; b: number }) => ({
+        r: acc.r + p.r,
+        g: acc.g + p.g,
+        b: acc.b + p.b,
+      }),
+      { r: 0, g: 0, b: 0 }
+    );
+    rgbAvg = [
+      Math.round((sum.r / len) * 100) / 100,
+      Math.round((sum.g / len) * 100) / 100,
+      Math.round((sum.b / len) * 100) / 100,
+    ];
+  }
+
+  // 温度: 原始值 ÷ 100 → 摄氏度 [t1, t2, t3, t4]
+  let tempCelsius: number[] | null = null;
+  if (Array.isArray(temperatureData) && temperatureData.length > 0) {
+    tempCelsius = temperatureData.map((v: number) => Math.round((v / 100) * 100) / 100);
+  }
+
   const isCalibrationNormalized =
     isCalibration === 1 || isCalibration === "1" || isCalibration === true
       ? 1
@@ -92,8 +117,8 @@ export async function saveMeasurement(data: any, specInfo?: any): Promise<any> {
     calibrationIndex,
     correctedData,
     caculatedData,
-    null,
-    null,
+    rgbAvg,
+    tempCelsius,
   ];
 
   try {
