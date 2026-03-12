@@ -4,7 +4,7 @@ set -eo pipefail
 # 默认配置
 DEFAULT_PLATFORM="linux/amd64"
 IMAGE_NAME="${PWD##*/}"  # 默认为当前目录名
-REGISTRY="yijun9124/" # 默认不上传，如需上传设为 registry.example.com/username/
+REGISTRY="registry.yijunstudio.xyz/" # 私有仓库
 PUSH_IMAGE=true
 
 # 解析命令行参数
@@ -22,8 +22,12 @@ while [[ $# -gt 0 ]]; do
             PUSH_IMAGE=true
             shift
             ;;
+        -r|--registry)
+            REGISTRY="$2"
+            shift; shift
+            ;;
         -n|--name)
-            IMAGE_NAME="$2"  # 如果传入参数，则使用该名称
+            IMAGE_NAME="$2"
             shift; shift
             ;;
         *)
