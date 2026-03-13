@@ -4,6 +4,7 @@ import {
   SerialPortType,
   turnOnRelay2,
   turnOffRelay2,
+  triggerRelay4Pulse,
 } from "../services/serial";
 import { logger } from "../utils/logger";
 
@@ -57,14 +58,20 @@ export async function setAlarmState(req: Request, res: Response) {
       await sendHexCommand([0xa0, 0x07, 0x01, 0xa8], SerialPortType.ALARM);
     }
 
-    // 打开继电器2: A0 02 01 A3
+    // 打开继电器2: A0 02 01 A3 (持续报警)
     await turnOnRelay2();
 
-    logger.info("已切换到报警状态: 红灯开，绿灯关，继电器2开");
+    // 触发继电器4脉冲: A0 04 01 A5 (表面检测报警 - 1秒脉冲)
+    // 与继电器2同时触发，但输出模式不同
+    triggerRelay4Pulse(1000).catch((error) => {
+      logger.error(`触发继电器4脉冲失败: ${error}`);
+    });
+
+    logger.info("已切换到报警状态: 红灯开，绿灯关，继电器2开，继电器4脉冲已触发");
 
     return res.status(200).json({
       success: true,
-      message: "已切换到报警状态: 红灯开，绿灯关，继电器2开",
+      message: "已切换到报警状态: 红灯开，绿灯关，继电器2开，继电器4脉冲已触发",
     });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);

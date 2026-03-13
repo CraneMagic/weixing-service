@@ -7,6 +7,12 @@ import {
   testRelayConnection,
   testQueryCommandEndpoint,
   testDeviceQuerySupportEndpoint,
+  turnOnRelay3Endpoint,
+  turnOffRelay3Endpoint,
+  turnOnRelay4Endpoint,
+  turnOffRelay4Endpoint,
+  triggerRelay3PulseEndpoint,
+  triggerRelay4PulseEndpoint,
 } from "../controllers/relayController";
 
 const router = Router();
@@ -31,5 +37,15 @@ router.get("/test-query", testQueryCommandEndpoint);
 
 // 测试设备是否支持状态查询
 router.get("/test-device-support", testDeviceQuerySupportEndpoint);
+
+// 继电器3控制（端面检测报警）
+router.post("/relay-3/on", turnOnRelay3Endpoint);
+router.post("/relay-3/off", turnOffRelay3Endpoint);
+router.post("/relay-3/pulse", triggerRelay3PulseEndpoint);
+
+// 继电器4控制（表面检测报警）
+router.post("/relay-4/on", turnOnRelay4Endpoint);
+router.post("/relay-4/off", turnOffRelay4Endpoint);
+router.post("/relay-4/pulse", triggerRelay4PulseEndpoint);
 
 export default router;

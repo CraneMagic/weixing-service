@@ -636,3 +636,117 @@ export async function testDeviceQuerySupport(): Promise<{
     serialEventEmitter.removeListener("data", dataListener);
   }
 }
+
+const relayPulseLocks: Map<number, boolean> = new Map();
+
+export function isRelayPulsing(relayNumber: number): boolean {
+  return relayPulseLocks.get(relayNumber) || false;
+}
+
+function setRelayPulseLock(relayNumber: number, locked: boolean): void {
+  relayPulseLocks.set(relayNumber, locked);
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export async function turnOnRelay3(): Promise<boolean> {
+  const command = [0xa0, 0x03, 0x01, 0xa4];
+  return await sendHexCommand(command, SerialPortType.RELAY);
+}
+
+export async function turnOffRelay3(): Promise<boolean> {
+  const command = [0xa0, 0x03, 0x00, 0xa3];
+  return await sendHexCommand(command, SerialPortType.RELAY);
+}
+
+export async function turnOnRelay4(): Promise<boolean> {
+  const command = [0xa0, 0x04, 0x01, 0xa5];
+  return await sendHexCommand(command, SerialPortType.RELAY);
+}
+
+export async function turnOffRelay4(): Promise<boolean> {
+  const command = [0xa0, 0x04, 0x00, 0xa4];
+  return await sendHexCommand(command, SerialPortType.RELAY);
+}
+
+export async function triggerRelay3Pulse(durationMs: number = 1000): Promise<boolean> {
+  const relayNumber = 3;
+  
+  if (isRelayPulsing(relayNumber)) {
+    logger.warn(`继电器${relayNumber}正在执行脉冲，忽略本次请求`);
+    return false;
+  }
+
+  try {
+    setRelayPulseLock(relayNumber, true);
+    logger.info(`开始触发继电器${relayNumber}脉冲，持续时间: ${durationMs}ms`);
+
+    const turnOnResult = await turnOnRelay3();
+    if (!turnOnResult) {
+      logger.error(`继电器${relayNumber}打开失败`);
+      setRelayPulseLock(relayNumber, false);
+      return false;
+    }
+    logger.info(`继电器${relayNumber}已打开`);
+
+    await delay(durationMs);
+
+    const turnOffResult = await turnOffRelay3();
+    if (!turnOffResult) {
+      logger.error(`继电器${relayNumber}关闭失败`);
+      setRelayPulseLock(relayNumber, false);
+      return false;
+    }
+    logger.info(`继电器${relayNumber}已关闭，脉冲完成`);
+
+    return true;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`触发继电器${relayNumber}脉冲失败: ${errorMessage}`);
+    return false;
+  } finally {
+    setRelayPulseLock(relayNumber, false);
+  }
+}
+
+export async function triggerRelay4Pulse(durationMs: number = 1000): Promise<boolean> {
+  const relayNumber = 4;
+  
+  if (isRelayPulsing(relayNumber)) {
+    logger.warn(`继电器${relayNumber}正在执行脉冲，忽略本次请求`);
+    return false;
+  }
+
+  try {
+    setRelayPulseLock(relayNumber, true);
+    logger.info(`开始触发继电器${relayNumber}脉冲，持续时间: ${durationMs}ms`);
+
+    const turnOnResult = await turnOnRelay4();
+    if (!turnOnResult) {
+      logger.error(`继电器${relayNumber}打开失败`);
+      setRelayPulseLock(relayNumber, false);
+      return false;
+    }
+    logger.info(`继电器${relayNumber}已打开`);
+
+    await delay(durationMs);
+
+    const turnOffResult = await turnOffRelay4();
+    if (!turnOffResult) {
+      logger.error(`继电器${relayNumber}关闭失败`);
+      setRelayPulseLock(relayNumber, false);
+      return false;
+    }
+    logger.info(`继电器${relayNumber}已关闭，脉冲完成`);
+
+    return true;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`触发继电器${relayNumber}脉冲失败: ${errorMessage}`);
+    return false;
+  } finally {
+    setRelayPulseLock(relayNumber, false);
+  }
+}

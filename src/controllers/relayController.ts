@@ -10,6 +10,13 @@ import {
   testQueryCommand,
   testDeviceQuerySupport,
   SerialPortType,
+  turnOnRelay3,
+  turnOffRelay3,
+  turnOnRelay4,
+  turnOffRelay4,
+  triggerRelay3Pulse,
+  triggerRelay4Pulse,
+  isRelayPulsing,
 } from "../services/serial";
 import { logger } from "../utils/logger";
 
@@ -347,6 +354,202 @@ export async function testDeviceQuerySupportEndpoint(
     return res.status(500).json({
       success: false,
       message: `测试设备查询支持失败: ${errorMessage}`,
+    });
+  }
+}
+
+export async function turnOnRelay3Endpoint(req: Request, res: Response) {
+  try {
+    const result = await turnOnRelay3();
+    if (result) {
+      logger.info("继电器3已打开");
+      return res.status(200).json({
+        success: true,
+        message: "继电器3已打开",
+        relay: 3,
+        command: "A0 03 01 A4",
+      });
+    } else {
+      return res.status(500).json({
+        success: false,
+        message: "打开继电器3失败",
+        relay: 3,
+      });
+    }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`打开继电器3失败: ${errorMessage}`);
+    return res.status(500).json({
+      success: false,
+      message: `打开继电器3失败: ${errorMessage}`,
+      relay: 3,
+    });
+  }
+}
+
+export async function turnOffRelay3Endpoint(req: Request, res: Response) {
+  try {
+    const result = await turnOffRelay3();
+    if (result) {
+      logger.info("继电器3已关闭");
+      return res.status(200).json({
+        success: true,
+        message: "继电器3已关闭",
+        relay: 3,
+        command: "A0 03 00 A3",
+      });
+    } else {
+      return res.status(500).json({
+        success: false,
+        message: "关闭继电器3失败",
+        relay: 3,
+      });
+    }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`关闭继电器3失败: ${errorMessage}`);
+    return res.status(500).json({
+      success: false,
+      message: `关闭继电器3失败: ${errorMessage}`,
+      relay: 3,
+    });
+  }
+}
+
+export async function turnOnRelay4Endpoint(req: Request, res: Response) {
+  try {
+    const result = await turnOnRelay4();
+    if (result) {
+      logger.info("继电器4已打开");
+      return res.status(200).json({
+        success: true,
+        message: "继电器4已打开",
+        relay: 4,
+        command: "A0 04 01 A5",
+      });
+    } else {
+      return res.status(500).json({
+        success: false,
+        message: "打开继电器4失败",
+        relay: 4,
+      });
+    }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`打开继电器4失败: ${errorMessage}`);
+    return res.status(500).json({
+      success: false,
+      message: `打开继电器4失败: ${errorMessage}`,
+      relay: 4,
+    });
+  }
+}
+
+export async function turnOffRelay4Endpoint(req: Request, res: Response) {
+  try {
+    const result = await turnOffRelay4();
+    if (result) {
+      logger.info("继电器4已关闭");
+      return res.status(200).json({
+        success: true,
+        message: "继电器4已关闭",
+        relay: 4,
+        command: "A0 04 00 A4",
+      });
+    } else {
+      return res.status(500).json({
+        success: false,
+        message: "关闭继电器4失败",
+        relay: 4,
+      });
+    }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`关闭继电器4失败: ${errorMessage}`);
+    return res.status(500).json({
+      success: false,
+      message: `关闭继电器4失败: ${errorMessage}`,
+      relay: 4,
+    });
+  }
+}
+
+export async function triggerRelay3PulseEndpoint(req: Request, res: Response) {
+  try {
+    const duration = parseInt(req.body?.duration) || 1000;
+    
+    if (isRelayPulsing(3)) {
+      return res.status(429).json({
+        success: false,
+        message: "继电器3正在执行脉冲，请稍后再试",
+        relay: 3,
+        status: "pulsing",
+      });
+    }
+
+    const result = await triggerRelay3Pulse(duration);
+    if (result) {
+      return res.status(200).json({
+        success: true,
+        message: "继电器3脉冲已触发",
+        relay: 3,
+        duration,
+        command: "A0 03 01 A4",
+      });
+    } else {
+      return res.status(500).json({
+        success: false,
+        message: "触发继电器3脉冲失败",
+        relay: 3,
+      });
+    }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`触发继电器3脉冲失败: ${errorMessage}`);
+    return res.status(500).json({
+      success: false,
+      message: `触发继电器3脉冲失败: ${errorMessage}`,
+      relay: 3,
+    });
+  }
+}
+
+export async function triggerRelay4PulseEndpoint(req: Request, res: Response) {
+  try {
+    const duration = parseInt(req.body?.duration) || 1000;
+    
+    if (isRelayPulsing(4)) {
+      return res.status(429).json({
+        success: false,
+        message: "继电器4正在执行脉冲，请稍后再试",
+        relay: 4,
+        status: "pulsing",
+      });
+    }
+
+    const result = await triggerRelay4Pulse(duration);
+    if (result) {
+      return res.status(200).json({
+        success: true,
+        message: "继电器4脉冲已触发",
+        relay: 4,
+        duration,
+        command: "A0 04 01 A5",
+      });
+    } else {
+      return res.status(500).json({
+        success: false,
+        message: "触发继电器4脉冲失败",
+        relay: 4,
+      });
+    }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`触发继电器4脉冲失败: ${errorMessage}`);
+    return res.status(500).json({
+      success: false,
+      message: `触发继电器4脉冲失败: ${errorMessage}`,
+      relay: 4,
     });
   }
 }

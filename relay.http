@@ -44,3 +44,52 @@ GET http://localhost:3000/api/relay/test-query?commandType=route4_query
 
 ### 14. 测试设备是否支持状态查询（综合测试）
 GET http://localhost:3000/api/relay/test-device-support
+
+
+### 继电器3和4控制API测试（端面检测/表面检测报警）
+
+### 15. 打开继电器3（端面检测）
+### 发送命令: A0 03 01 A4
+POST http://localhost:3000/api/relay/relay-3/on
+Content-Type: application/json
+
+### 16. 关闭继电器3（端面检测）
+### 发送命令: A0 03 00 A3
+POST http://localhost:3000/api/relay/relay-3/off
+Content-Type: application/json
+
+### 17. 触发继电器3脉冲（端面检测报警 - 默认1秒）
+### 发送命令: A0 03 01 A4，持续1秒后自动关闭
+POST http://localhost:3000/api/relay/relay-3/pulse
+Content-Type: application/json
+
+### 18. 触发继电器3脉冲（端面检测报警 - 自定义2秒）
+POST http://localhost:3000/api/relay/relay-3/pulse
+Content-Type: application/json
+
+{
+  "duration": 2000
+}
+
+### 19. 打开继电器4（表面检测）
+### 发送命令: A0 04 01 A5
+POST http://localhost:3000/api/relay/relay-4/on
+Content-Type: application/json
+
+### 20. 关闭继电器4（表面检测）
+### 发送命令: A0 04 00 A4
+POST http://localhost:3000/api/relay/relay-4/off
+Content-Type: application/json
+
+### 21. 触发继电器4脉冲（表面检测报警 - 默认1秒）
+### 发送命令: A0 04 01 A5，持续1秒后自动关闭
+POST http://localhost:3000/api/relay/relay-4/pulse
+Content-Type: application/json
+
+### 22. 触发继电器4脉冲（表面检测报警 - 自定义500ms）
+POST http://localhost:3000/api/relay/relay-4/pulse
+Content-Type: application/json
+
+{
+  "duration": 500
+}
