@@ -190,6 +190,10 @@ const defaultParameters = [
       calibrationFactorForInnerDiameter: 1,
       calibrationFactorForWallThickness: 1,
 
+      smoothingWindowOuter: 60,
+      smoothingWindowInner: 60,
+      smoothingWindowWall: 60,
+
       enableArrayCorrection: false,
       outerCorrectionArray: [
         -32.38681805, -18.22305641, -4.986221453, -3.260634572, 2.723747708,
