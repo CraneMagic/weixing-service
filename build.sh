@@ -92,13 +92,10 @@ else
     if [[ "$PUSH_IMAGE" == "true" ]]; then
         docker push "$FULL_IMAGE_NAME"
         echo "✅ 单平台镜像已推送至仓库"
+
+        # 推送成功后删除本地镜像，释放磁盘空间
+        docker rmi "$FULL_IMAGE_NAME" 2>/dev/null && \
+            echo "🗑️  已删除本地镜像: $FULL_IMAGE_NAME" || \
+            echo "⚠️  删除本地镜像失败（可能已被删除）"
     fi
-    
-    # 运行容器（仅本地）
-    echo "🚀 启动容器..."
-    docker run -d \
-        --platform "$PLATFORMS" \
-        -p 8080:8080 \
-        --name "${IMAGE_NAME}-container" \
-        "$FULL_IMAGE_NAME"
 fi
