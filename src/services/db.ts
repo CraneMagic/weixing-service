@@ -195,6 +195,8 @@ const defaultParameters = [
       smoothingWindowWall: 60,
 
       enableArrayCorrection: false,
+      eccentricityFactorOuter: 0.07,
+      eccentricityFactorWall: 0.1,
       outerCorrectionArray: [
         -32.38681805, -18.22305641, -4.986221453, -3.260634572, 2.723747708,
         8.834556535, 18.16297731, 27.77497291, 31.39322547, 40.33463507,
