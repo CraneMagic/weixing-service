@@ -18,6 +18,7 @@ import { initializeScheduler } from "./services/scheduler";
 import { initializePostgresDB } from "./services/db-setup-postgres";
 import { checkPoolHealth } from "./services/pg-pool";
 import { startSchedulers } from "./scheduler";
+import { sendHexCommand, SerialPortType } from "./services/serial";
 
 // 加载环境变量
 dotenv.config();
@@ -225,7 +226,7 @@ async function startApplication() {
     );
 
     // 5. 启动服务器（在所有初始化完成后）
-    app.listen(port, () => {
+    app.listen(port, async () => {
       logger.info(`🎉 服务器成功启动在 http://localhost:${port}`);
       if (skipDatabaseValidation) {
         logger.info("✅ 应用初始化完成（跳过数据库验证模式）");
@@ -235,6 +236,16 @@ async function startApplication() {
         );
       } else {
         logger.info("✅ 应用初始化完成，所有服务已就绪");
+
+        // 6. 启动时初始化指示灯为正常状态（绿灯）
+        try {
+          await sendHexCommand([0xa0, 0x07, 0x00, 0xa7], SerialPortType.ALARM); // 关闭红灯+蜂鸣
+          await sendHexCommand([0xa0, 0x03, 0x00, 0xa3], SerialPortType.ALARM); // 关闭红灯
+          await sendHexCommand([0xa0, 0x02, 0x01, 0xa3], SerialPortType.ALARM); // 打开绿灯
+          logger.info("✅ 指示灯已初始化为正常状态（绿灯）");
+        } catch (e) {
+          logger.warn(`指示灯初始化失败（串口可能未连接）: ${e}`);
+        }
       }
     });
   } catch (error) {
