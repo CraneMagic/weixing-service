@@ -49,6 +49,7 @@ export async function saveMeasurement(data: any, specInfo?: any): Promise<any> {
     calibrationIndex,
     rgbData,
     temperatureData,
+    statsSource,
   } = data;
 
   // RGB: 200个采样点 → 三通道平均值 [avg_r, avg_g, avg_b]
@@ -88,11 +89,11 @@ export async function saveMeasurement(data: any, specInfo?: any): Promise<any> {
       inner_max, inner_avg, inner_min, 
       wall_max, wall_avg, wall_min, 
       outer_non_circularity, inner_non_circularity, 
-      is_compliant, is_calibration, calibration_type, calibration_index, 
+      is_compliant, is_calibration, calibration_type, calibration_index,
       corrected_data, calculated_data,
-      rgb_data, temperature_data
+      rgb_data, temperature_data, stats_source
     ) VALUES (
-      $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
+      $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23
     ) RETURNING *;
   `;
 
@@ -119,6 +120,7 @@ export async function saveMeasurement(data: any, specInfo?: any): Promise<any> {
     caculatedData,
     rgbAvg ? JSON.stringify(rgbAvg) : null,
     tempCelsius ? JSON.stringify(tempCelsius) : null,
+    statsSource ?? "host",
   ];
 
   try {
@@ -334,6 +336,7 @@ export async function getMeasurementsCsv(options: {
     "outer_non_circularity", "inner_non_circularity",
     "is_compliant", "is_calibration",
     "calibration_type", "calibration_index",
+    "stats_source",
   ];
 
   let query = `SELECT ${csvColumns.map((c) => `"${c}"`).join(", ")} FROM measurements`;

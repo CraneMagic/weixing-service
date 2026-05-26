@@ -66,7 +66,8 @@ export async function initializePostgresDB(): Promise<void> {
         calculated_data JSONB,
         pc_num TEXT,
         rgb_data JSONB,
-        temperature_data JSONB
+        temperature_data JSONB,
+        stats_source TEXT
       )
     `);
     logger.info("✅ measurements 表创建完成");
@@ -79,6 +80,7 @@ export async function initializePostgresDB(): Promise<void> {
       { name: "pc_num", type: "TEXT" },
       { name: "rgb_data", type: "JSONB" },
       { name: "temperature_data", type: "JSONB" },
+      { name: "stats_source", type: "TEXT" },
     ];
 
     for (const col of newColumns) {

@@ -113,6 +113,7 @@ function transformMeasurement(record: any) {
     calibration_index,
     rgb_data,
     temperature_data,
+    stats_source,
   } = record;
 
   return {
@@ -171,6 +172,7 @@ function transformMeasurement(record: any) {
     },
     rgbData: rgb_data ?? null,
     temperatureData: temperature_data ?? null,
+    statsSource: stats_source ?? null,
   };
 }
 
@@ -475,6 +477,7 @@ export async function downloadMeasurementsCsv(req: Request, res: Response) {
       "is_calibration",
       "calibration_type",
       "calibration_index",
+      "stats_source",
     ];
 
     const escapeCsvField = (value: any): string => {
