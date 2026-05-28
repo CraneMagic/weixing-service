@@ -279,11 +279,10 @@ export async function getMeasurements(options: {
 }
 
 /**
- * 外部接口专用：精简字段、强制分页、支持时间窗 / specId 过滤。
- * 不拉取重型 JSONB(corrected_data / calculated_data)，减少带宽。
+ * 公开接口专用：仅查询对外暴露的列，强制分页，支持时间窗 / specId 过滤。
  * 列：id, timestamp, spec_id, spec_name, outer/inner/wall {max,avg,min}, rgb_data, temperature_data。
  */
-export async function getExternalMeasurements(options: {
+export async function getPublicMeasurements(options: {
   limit?: number;
   offset?: number;
   spec_id?: string;
@@ -359,7 +358,7 @@ export async function getExternalMeasurements(options: {
     const errorMessage =
       error instanceof Error ? error.message : String(error);
     logger.error(
-      `Failed to get external measurements from PostgreSQL: ${errorMessage}`
+      `Failed to get public measurements from PostgreSQL: ${errorMessage}`
     );
     throw error;
   }

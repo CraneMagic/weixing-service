@@ -12,7 +12,7 @@ import {
   getMeasurementsCsv,
   getNonCompliantMeasurements,
   getNonCompliantStatsBySpec,
-  getExternalMeasurements,
+  getPublicMeasurements,
 } from "../services/db-postgres";
 import { getParameter } from "../services/db";
 import { logger } from "../utils/logger";
@@ -575,7 +575,7 @@ export async function getNonCompliant(req: Request, res: Response) {
 }
 
 /**
- * 外部接口：供局域网内调用的精简测量数据列表。
+ * 公开接口：供局域网内调用的测量数据列表。
  * 字段：id, timestamp, specId, specName, stats(outer/inner/wall {max,avg,min}), rgbData, temperatureData。
  * 查询参数：
  *   - page (默认 1)，limit (默认 50，最大 500)
@@ -584,7 +584,7 @@ export async function getNonCompliant(req: Request, res: Response) {
  *   - specId (可选过滤)
  *   - sortOrder=ASC|DESC (默认 DESC)
  */
-export async function getExternalMeasurementsList(
+export async function getPublicMeasurementsList(
   req: Request,
   res: Response
 ) {
@@ -618,7 +618,7 @@ export async function getExternalMeasurementsList(
       }
     }
 
-    const result = await getExternalMeasurements({
+    const result = await getPublicMeasurements({
       limit: limitNum,
       offset,
       spec_id: specId,
@@ -650,7 +650,7 @@ export async function getExternalMeasurementsList(
     });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    logger.error(`获取外部测量数据列表失败: ${errorMessage}`);
+    logger.error(`获取公开测量数据列表失败: ${errorMessage}`);
     return res.status(500).json({
       success: false,
       message: `获取失败: ${errorMessage}`,

@@ -1,0 +1,214 @@
+openapi: 3.1.0
+info:
+  title: 外径测量数据 API
+  version: "1.0.0"
+  description: |
+    用于读取管材外径/内径/壁厚的实测数据。
+
+    - 支持按页码 `page`/`limit` 分页。
+    - 时间窗支持两种方式：`startTime` + `endTime`（ISO 8601 时间），或 `hours`（最近 N 小时）。
+    - 数值单位约定：
+      - `stats.outer/inner/wall.{max,avg,min}` 单位 **µm**（÷1000 即 mm）。
+      - `temperatureData` 单位 **摄氏度**（°C）。
+      - `rgbData` 为颜色 R/G/B 三通道读数，数值范围 0–255。
+
+servers:
+  - url: http://{host}:{port}
+    description: 部署地址
+    variables:
+      host:
+        default: 192.168.1.100
+        description: 服务所在主机地址
+      port:
+        default: "3000"
+        description: 服务端口
+
+paths:
+  /api/public/measurements:
+    get:
+      summary: 获取测量数据列表
+      operationId: listMeasurements
+      tags: [Measurements]
+      parameters:
+        - in: query
+          name: page
+          description: 页码，从 1 开始
+          required: false
+          schema: { type: integer, minimum: 1, default: 1 }
+        - in: query
+          name: limit
+          description: 每页条数。最大 500，超出会被自动夹紧。
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 500, default: 50 }
+        - in: query
+          name: startTime
+          description: |
+            时间窗起点（含），ISO 8601 字符串，如 `2026-05-28T00:00:00Z`。
+            与 `endTime` 配合使用。若同时传了 `hours`，以 `startTime`/`endTime` 为准。
+          required: false
+          schema: { type: string, format: date-time }
+        - in: query
+          name: endTime
+          description: 时间窗终点（含），ISO 8601 字符串。
+          required: false
+          schema: { type: string, format: date-time }
+        - in: query
+          name: hours
+          description: |
+            最近 N 小时（浮点数，支持小数）。仅当 `startTime` 和 `endTime` 都未传时生效；
+            服务端会将其换算为 `startTime = now - hours 小时`。
+          required: false
+          schema: { type: number, minimum: 0, exclusiveMinimum: true }
+        - in: query
+          name: specId
+          description: 按规格 ID 过滤（例如 `PE_20mm_3mm`）。
+          required: false
+          schema: { type: string }
+        - in: query
+          name: sortOrder
+          description: 按 `timestamp` 排序方向。
+          required: false
+          schema:
+            type: string
+            enum: [ASC, DESC]
+            default: DESC
+      responses:
+        "200":
+          description: 成功返回测量数据分页结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeasurementListResponse"
+              examples:
+                default:
+                  summary: 一页 2 条数据示例
+                  value:
+                    success: true
+                    page: 1
+                    limit: 50
+                    total: 12345
+                    data:
+                      - id: "98765"
+                        timestamp: "2026-05-29T03:21:08.512Z"
+                        specId: "PE_20mm_3mm"
+                        specName: "PE 20×3"
+                        stats:
+                          outer: { max: 20030, avg: 20012, min: 19990 }
+                          inner: { max: 14050, avg: 14020, min: 13990 }
+                          wall:  { max: 3050,  avg: 3020,  min: 2990 }
+                        rgbData: [128.5, 132.1, 90.7]
+                        temperatureData: [25.10, 25.20, 25.05, 25.30]
+                      - id: "98764"
+                        timestamp: "2026-05-29T03:21:07.412Z"
+                        specId: "PE_20mm_3mm"
+                        specName: "PE 20×3"
+                        stats:
+                          outer: { max: 20025, avg: 20010, min: 19992 }
+                          inner: { max: 14048, avg: 14018, min: 13988 }
+                          wall:  { max: 3048,  avg: 3018,  min: 2988 }
+                        rgbData: [127.9, 131.8, 91.2]
+                        temperatureData: [25.11, 25.22, 25.06, 25.31]
+        "500":
+          description: 服务端错误
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+components:
+  schemas:
+    MeasurementListResponse:
+      type: object
+      required: [success, page, limit, total, data]
+      properties:
+        success:
+          type: boolean
+          description: 请求是否成功。失败时为 `false`，并附带 `message`。
+          example: true
+        page:
+          type: integer
+          description: 当前页码，从 1 开始。
+          example: 1
+        limit:
+          type: integer
+          description: 实际使用的每页条数（已对入参做范围夹紧）。
+          example: 50
+        total:
+          type: integer
+          description: 满足过滤条件的记录总数。
+          example: 12345
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/MeasurementRecord"
+
+    MeasurementRecord:
+      type: object
+      required: [id, timestamp, stats]
+      properties:
+        id:
+          type: string
+          description: 测量记录主键（字符串化的整数 ID）。
+          example: "98765"
+        timestamp:
+          type: string
+          format: date-time
+          description: 测量时间，ISO 8601 字符串（含时区）。
+          example: "2026-05-29T03:21:08.512Z"
+        specId:
+          type: [string, "null"]
+          description: 规格 ID。
+          example: "PE_20mm_3mm"
+        specName:
+          type: [string, "null"]
+          description: 规格显示名。
+          example: "PE 20×3"
+        stats:
+          $ref: "#/components/schemas/Stats"
+        rgbData:
+          type: [array, "null"]
+          description: |
+            颜色 R/G/B 三通道读数，长度固定 3，按 `[r, g, b]` 顺序，
+            数值范围 0–255。无颜色数据时为 `null`。
+          items: { type: number }
+          minItems: 3
+          maxItems: 3
+          example: [128.5, 132.1, 90.7]
+        temperatureData:
+          type: [array, "null"]
+          description: |
+            4 个温度传感器的当前读数，单位摄氏度（°C）。
+            无温度数据时为 `null`。
+          items: { type: number }
+          minItems: 4
+          maxItems: 4
+          example: [25.10, 25.20, 25.05, 25.30]
+
+    Stats:
+      type: object
+      description: 外径 / 内径 / 壁厚的最大、平均、最小值。
+      required: [outer, inner, wall]
+      properties:
+        outer: { $ref: "#/components/schemas/AxisStats" }
+        inner: { $ref: "#/components/schemas/AxisStats" }
+        wall:  { $ref: "#/components/schemas/AxisStats" }
+
+    AxisStats:
+      type: object
+      description: 单一维度（外径/内径/壁厚）的统计值，单位 µm（÷1000 即 mm）。
+      required: [max, avg, min]
+      properties:
+        max: { type: [number, "null"], example: 20030 }
+        avg: { type: [number, "null"], example: 20012 }
+        min: { type: [number, "null"], example: 19990 }
+
+    ErrorResponse:
+      type: object
+      required: [success, message]
+      properties:
+        success:
+          type: boolean
+          example: false
+        message:
+          type: string
+          example: "获取失败: connection terminated"
