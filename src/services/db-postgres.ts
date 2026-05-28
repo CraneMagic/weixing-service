@@ -278,6 +278,93 @@ export async function getMeasurements(options: {
   }
 }
 
+/**
+ * 外部接口专用：精简字段、强制分页、支持时间窗 / specId 过滤。
+ * 不拉取重型 JSONB(corrected_data / calculated_data)，减少带宽。
+ * 列：id, timestamp, spec_id, spec_name, outer/inner/wall {max,avg,min}, rgb_data, temperature_data。
+ */
+export async function getExternalMeasurements(options: {
+  limit?: number;
+  offset?: number;
+  spec_id?: string;
+  startTime?: string;
+  endTime?: string;
+  sortOrder?: "ASC" | "DESC";
+}): Promise<{
+  data: any[];
+  total: number;
+  page: number;
+  limit: number;
+}> {
+  const {
+    limit = 50,
+    offset = 0,
+    spec_id,
+    startTime,
+    endTime,
+    sortOrder = "DESC",
+  } = options;
+
+  const orderDirection = sortOrder === "ASC" ? "ASC" : "DESC";
+
+  const columns = `
+    id, timestamp, spec_id, spec_name,
+    outer_max, outer_avg, outer_min,
+    inner_max, inner_avg, inner_min,
+    wall_max, wall_avg, wall_min,
+    rgb_data, temperature_data
+  `;
+
+  let query = `SELECT ${columns} FROM measurements`;
+  let countQuery = `SELECT COUNT(*) as total FROM measurements`;
+  const params: any[] = [];
+  const conditions: string[] = [];
+  let paramIndex = 1;
+
+  if (spec_id) {
+    conditions.push(`spec_id = $${paramIndex++}`);
+    params.push(spec_id);
+  }
+  if (startTime) {
+    conditions.push(`timestamp >= $${paramIndex++}`);
+    params.push(startTime);
+  }
+  if (endTime) {
+    conditions.push(`timestamp <= $${paramIndex++}`);
+    params.push(endTime);
+  }
+
+  if (conditions.length > 0) {
+    const whereClause = ` WHERE ` + conditions.join(" AND ");
+    query += whereClause;
+    countQuery += whereClause;
+  }
+
+  try {
+    const countResult = await pool.query(countQuery, params);
+    const total = parseInt(countResult.rows[0].total, 10);
+
+    query += ` ORDER BY "timestamp" ${orderDirection} LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
+    params.push(limit, offset);
+
+    const { rows } = await pool.query(query, params);
+
+    return {
+      data: rows,
+      total,
+      page: limit > 0 ? Math.floor(offset / limit) + 1 : 1,
+      limit,
+    };
+  } catch (error) {
+    const errorMessage =
+      error instanceof Error ? error.message : String(error);
+    logger.error(
+      `Failed to get external measurements from PostgreSQL: ${errorMessage}`
+    );
+    throw error;
+  }
+}
+
 export async function getMeasurementsCsv(options: {
   spec_id?: string;
   spec_name?: string;

@@ -7,6 +7,7 @@ import { setupDeviceRoutes } from "./routes/device";
 import { setupSerialRoutes } from "./routes/serial";
 import lightRoutes from "./routes/lightRoutes";
 import measurementRoutes from "./routes/measurementRoutes";
+import externalRoutes from "./routes/externalRoutes";
 import qualityRecordRoutes from "./routes/qualityRecordRoutes";
 import relayRoutes from "./routes/relayRoutes";
 import networkScanRoutes from "./routes/networkScanRoutes";
@@ -116,6 +117,14 @@ async function startApplication() {
         });
       });
 
+      app.use("/api/external", (req, res) => {
+        res.status(503).json({
+          success: false,
+          message: "数据库功能已禁用",
+          error: "SKIP_DATABASE_VALIDATION 模式已启用，数据库相关API不可用",
+        });
+      });
+
       app.use("/api/quality-records", (req, res) => {
         res.status(503).json({
           success: false,
@@ -140,6 +149,7 @@ async function startApplication() {
       app.use("/api/light", lightRoutes);
       app.use("/api/relay", relayRoutes);
       app.use("/api/measurements", measurementRoutes);
+      app.use("/api/external", externalRoutes);
       app.use("/api/quality-records", qualityRecordRoutes);
       app.use("/api/baseline", baselineRoutes);
       app.use("/api/network", networkScanRoutes);

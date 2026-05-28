@@ -12,6 +12,7 @@ import {
   getMeasurementsCsv,
   getNonCompliantMeasurements,
   getNonCompliantStatsBySpec,
+  getExternalMeasurements,
 } from "../services/db-postgres";
 import { getParameter } from "../services/db";
 import { logger } from "../utils/logger";
@@ -566,6 +567,90 @@ export async function getNonCompliant(req: Request, res: Response) {
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     logger.error(`获取不合格测量记录失败: ${errorMessage}`);
+    return res.status(500).json({
+      success: false,
+      message: `获取失败: ${errorMessage}`,
+    });
+  }
+}
+
+/**
+ * 外部接口：供局域网内调用的精简测量数据列表。
+ * 字段：id, timestamp, specId, specName, stats(outer/inner/wall {max,avg,min}), rgbData, temperatureData。
+ * 查询参数：
+ *   - page (默认 1)，limit (默认 50，最大 500)
+ *   - startTime / endTime (ISO 时间，可选)
+ *   - hours (最近 N 小时，仅当 startTime/endTime 都未传时生效)
+ *   - specId (可选过滤)
+ *   - sortOrder=ASC|DESC (默认 DESC)
+ */
+export async function getExternalMeasurementsList(
+  req: Request,
+  res: Response
+) {
+  try {
+    const {
+      page = "1",
+      limit = "50",
+      startTime,
+      endTime,
+      hours,
+      specId,
+      sortOrder = "DESC",
+    } = req.query as Record<string, string | undefined>;
+
+    const limitNum = Math.min(
+      Math.max(parseInt(limit ?? "50", 10) || 50, 1),
+      500
+    );
+    const pageNum = Math.max(parseInt(page ?? "1", 10) || 1, 1);
+    const offset = (pageNum - 1) * limitNum;
+
+    // 时间窗：显式 startTime/endTime 优先；否则若给了 hours，则换算为 startTime
+    let effectiveStartTime = startTime;
+    let effectiveEndTime = endTime;
+    if (!effectiveStartTime && !effectiveEndTime && hours) {
+      const hoursNum = parseFloat(hours);
+      if (!isNaN(hoursNum) && hoursNum > 0) {
+        effectiveStartTime = new Date(
+          Date.now() - hoursNum * 60 * 60 * 1000
+        ).toISOString();
+      }
+    }
+
+    const result = await getExternalMeasurements({
+      limit: limitNum,
+      offset,
+      spec_id: specId,
+      startTime: effectiveStartTime,
+      endTime: effectiveEndTime,
+      sortOrder: sortOrder === "ASC" ? "ASC" : "DESC",
+    });
+
+    const data = result.data.map((row: any) => ({
+      id: String(row.id),
+      timestamp: row.timestamp,
+      specId: row.spec_id,
+      specName: row.spec_name,
+      stats: {
+        outer: { max: row.outer_max, avg: row.outer_avg, min: row.outer_min },
+        inner: { max: row.inner_max, avg: row.inner_avg, min: row.inner_min },
+        wall: { max: row.wall_max, avg: row.wall_avg, min: row.wall_min },
+      },
+      rgbData: row.rgb_data ?? null,
+      temperatureData: row.temperature_data ?? null,
+    }));
+
+    return res.status(200).json({
+      success: true,
+      page: result.page,
+      limit: result.limit,
+      total: result.total,
+      data,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`获取外部测量数据列表失败: ${errorMessage}`);
     return res.status(500).json({
       success: false,
       message: `获取失败: ${errorMessage}`,
