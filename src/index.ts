@@ -12,6 +12,9 @@ import qualityRecordRoutes from "./routes/qualityRecordRoutes";
 import relayRoutes from "./routes/relayRoutes";
 import networkScanRoutes from "./routes/networkScanRoutes";
 import baselineRoutes from "./routes/baselineRoutes";
+import noCodeAlarmRoutes from "./routes/noCodeAlarmRoutes";
+import alarmRoutes from "./routes/alarmRoutes";
+import { startNoCodeAlarmMonitor } from "./services/no-code-alarm";
 import { logger } from "./utils/logger";
 import { initializeDatabase } from "./services/db";
 import { setupCleanupJob } from "./services/cleanup";
@@ -154,6 +157,11 @@ async function startApplication() {
       app.use("/api/baseline", baselineRoutes);
       app.use("/api/network", networkScanRoutes);
       app.use("/api/baseline", baselineRoutes);
+      app.use("/api/no-code", noCodeAlarmRoutes);
+      app.use("/api/alarm", alarmRoutes);
+
+      // 无喷码报警周期评估（依赖质量跳过状态，故只在数据库可用时启动）
+      startNoCodeAlarmMonitor();
     }
 
     // 健康检查路由
