@@ -42,6 +42,38 @@ IMAGE_TAG=${IMAGE_TAG:-latest}
 PLATFORMS=${PLATFORMS:-$DEFAULT_PLATFORM}
 FULL_IMAGE_NAME="${REGISTRY}${IMAGE_NAME}:${IMAGE_TAG}"
 
+# ==================== 版本信息（设备看板用） ====================
+REVISION=$(git rev-parse --short=7 HEAD 2>/dev/null || echo "")
+if [[ -n "$REVISION" && -n "$(git status --porcelain 2>/dev/null)" ]]; then
+    REVISION="${REVISION}-dirty"
+fi
+BUILT_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+VERSION="$(date +%Y.%m.%d)-${REVISION:-nogit}"
+LABEL_ARGS=(
+    --label "com.weixing.build=1"
+    --label "org.opencontainers.image.revision=${REVISION}"
+    --label "org.opencontainers.image.created=${BUILT_AT}"
+    --label "org.opencontainers.image.version=${VERSION}"
+)
+echo "🏷️  版本: ${VERSION}"
+
+# 推送成功后登记最新版本；未配置 FLEET_API_URL / FLEET_TOKEN 时跳过，失败不影响构建
+register_release() {
+    if [[ -z "${FLEET_API_URL:-}" || -z "${FLEET_TOKEN:-}" ]]; then
+        echo "⚠️  未设置 FLEET_API_URL / FLEET_TOKEN，跳过版本登记"
+        return 0
+    fi
+    if curl -fsS -m 10 -X POST "${FLEET_API_URL%/}/api/releases" \
+        -H "Content-Type: application/json" \
+        -H "X-Fleet-Token: ${FLEET_TOKEN}" \
+        -d "{\"image\":\"${REGISTRY}${IMAGE_NAME}\",\"version\":\"${VERSION}\",\"revision\":\"${REVISION}\",\"builtAt\":\"${BUILT_AT}\"}" \
+        >/dev/null; then
+        echo "📌 已登记最新版本: ${VERSION}"
+    else
+        echo "⚠️  登记最新版本失败（不影响构建）"
+    fi
+}
+
 # 验证参数
 if [[ "$PUSH_IMAGE" == "true" && -z "$REGISTRY" ]]; then
     echo "错误：推送镜像必须设置REGISTRY！"
@@ -77,21 +109,25 @@ if [[ "$PLATFORMS" == *,* ]]; then
     docker buildx build \
         --platform "$PLATFORMS" \
         -t "$FULL_IMAGE_NAME" \
+        "${LABEL_ARGS[@]}" \
         --push \
         .
     
     echo "✅ 多平台构建完成并推送至仓库"
+    register_release
     echo "镜像地址：$FULL_IMAGE_NAME"
 else
     # 单平台构建模式
     docker build \
         --platform "$PLATFORMS" \
         -t "$FULL_IMAGE_NAME" \
+        "${LABEL_ARGS[@]}" \
         .
     
     if [[ "$PUSH_IMAGE" == "true" ]]; then
         docker push "$FULL_IMAGE_NAME"
         echo "✅ 单平台镜像已推送至仓库"
+        register_release
 
         # 推送成功后删除本地镜像，释放磁盘空间
         docker rmi "$FULL_IMAGE_NAME" 2>/dev/null && \
