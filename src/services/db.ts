@@ -176,6 +176,7 @@ const defaultParameters = [
         label_score_threshold: 0.35,
         detection_score_threshold: 35,
         force_pass: false,
+        defect_confirm_frames: 1, // 缺陷确认帧数：同一路相机连续 N 帧 fail 才报警，由 tcp-server 读取（相机端忽略）
       },
     },
   },
