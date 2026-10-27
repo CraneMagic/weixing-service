@@ -1,6 +1,7 @@
 import { SerialPort } from "serialport";
 import { ReadlineParser } from "@serialport/parser-readline";
 import EventEmitter from "events";
+import * as fs from "fs";
 import { logger } from "../utils/logger";
 
 // 串口类型枚举
@@ -20,6 +21,20 @@ const parsers: Map<SerialPortType, ReadlineParser> = new Map();
 let cameraPowerStatusCallback: ((status: boolean) => void) | null = null;
 
 /**
+ * 选串口路径：环境变量 > 有含义的名字 > 旧的 ttyUSB 编号。
+ * compose 按 by-id 把设备映射成 /dev/weixing-alarm、/dev/weixing-relay；
+ * 老的 compose 只映射 ttyUSB0/1，此时回退，保证镜像和 compose 新旧混用也能工作。
+ */
+function resolveSerialPath(
+  envValue: string | undefined,
+  namedPath: string,
+  legacyPath: string
+): string {
+  if (envValue) return envValue;
+  return fs.existsSync(namedPath) ? namedPath : legacyPath;
+}
+
+/**
  * 获取串口配置
  */
 function getSerialPortConfig(portType: SerialPortType): {
@@ -28,7 +43,11 @@ function getSerialPortConfig(portType: SerialPortType): {
 } {
   if (portType === SerialPortType.ALARM) {
     return {
-      path: process.env.ALARM_SERIAL_PORT || "/dev/ttyUSB0",
+      path: resolveSerialPath(
+        process.env.ALARM_SERIAL_PORT,
+        "/dev/weixing-alarm",
+        "/dev/ttyUSB0"
+      ),
       baudRate: parseInt(
         process.env.ALARM_SERIAL_BAUD_RATE ||
           process.env.SERIAL_BAUD_RATE ||
@@ -38,7 +57,11 @@ function getSerialPortConfig(portType: SerialPortType): {
     };
   } else if (portType === SerialPortType.RELAY) {
     return {
-      path: process.env.RELAY_SERIAL_PORT || "/dev/ttyUSB1",
+      path: resolveSerialPath(
+        process.env.RELAY_SERIAL_PORT,
+        "/dev/weixing-relay",
+        "/dev/ttyUSB1"
+      ),
       baudRate: parseInt(
         process.env.RELAY_SERIAL_BAUD_RATE ||
           process.env.SERIAL_BAUD_RATE ||
