@@ -57,6 +57,11 @@ LABEL_ARGS=(
 )
 echo "🏷️  版本: ${VERSION}"
 
+# 除 latest 外再推一个版本 tag（与设备看板、镜像 label 显示的版本一致），
+# latest 被覆盖后仍可按版本拉取旧镜像回滚
+VERSION_IMAGE_NAME="${REGISTRY}${IMAGE_NAME}:${VERSION}"
+TAG_ARGS=(-t "$FULL_IMAGE_NAME" -t "$VERSION_IMAGE_NAME")
+
 # 推送成功后登记最新版本；未配置 FLEET_API_URL / FLEET_TOKEN 时跳过，失败不影响构建
 register_release() {
     if [[ -z "${FLEET_API_URL:-}" || -z "${FLEET_TOKEN:-}" ]]; then
@@ -108,29 +113,30 @@ if [[ "$PLATFORMS" == *,* ]]; then
     prepare_builder
     docker buildx build \
         --platform "$PLATFORMS" \
-        -t "$FULL_IMAGE_NAME" \
+        "${TAG_ARGS[@]}" \
         "${LABEL_ARGS[@]}" \
         --push \
         .
     
     echo "✅ 多平台构建完成并推送至仓库"
     register_release
-    echo "镜像地址：$FULL_IMAGE_NAME"
+    echo "镜像地址：$FULL_IMAGE_NAME（版本 tag：$VERSION_IMAGE_NAME）"
 else
     # 单平台构建模式
     docker build \
         --platform "$PLATFORMS" \
-        -t "$FULL_IMAGE_NAME" \
+        "${TAG_ARGS[@]}" \
         "${LABEL_ARGS[@]}" \
         .
     
     if [[ "$PUSH_IMAGE" == "true" ]]; then
         docker push "$FULL_IMAGE_NAME"
+        docker push "$VERSION_IMAGE_NAME"
         echo "✅ 单平台镜像已推送至仓库"
         register_release
 
         # 推送成功后删除本地镜像，释放磁盘空间
-        docker rmi "$FULL_IMAGE_NAME" 2>/dev/null && \
+        docker rmi "$FULL_IMAGE_NAME" "$VERSION_IMAGE_NAME" 2>/dev/null && \
             echo "🗑️  已删除本地镜像: $FULL_IMAGE_NAME" || \
             echo "⚠️  删除本地镜像失败（可能已被删除）"
     fi
