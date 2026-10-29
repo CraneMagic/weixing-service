@@ -133,6 +133,7 @@ export async function initializePostgresDB(): Promise<void> {
         model_version TEXT,
         has_code BOOLEAN,
         code_confidence REAL,
+        boxes JSONB,
         PRIMARY KEY (client_ip, timestamp)
       )
     `);
@@ -150,6 +151,7 @@ export async function initializePostgresDB(): Promise<void> {
       { name: "has_code", type: "BOOLEAN" },
       { name: "code_confidence", type: "REAL" },
       { name: "cv_result", type: "JSONB" },
+      { name: "boxes", type: "JSONB" }, // 相机 YOLO 检测框，前端叠加绘制
     ];
 
     for (const col of newQualityColumns) {

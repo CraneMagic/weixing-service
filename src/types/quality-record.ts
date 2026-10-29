@@ -32,4 +32,6 @@ export interface QualityRecord {
   model_version?: string; // 模型版本
   has_code?: boolean; // 是否有喷码
   code_confidence?: number; // 喷码置信度
+  // 相机 YOLO 检测框（JSONB）。写入时须为 JSON 字符串：node-pg 会把 JS 数组转成 Postgres 数组而不是 JSON
+  boxes?: string | { cls: string; score: number; x: number; y: number; w: number; h: number }[];
 }
