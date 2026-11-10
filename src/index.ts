@@ -14,6 +14,7 @@ import networkScanRoutes from "./routes/networkScanRoutes";
 import baselineRoutes from "./routes/baselineRoutes";
 import noCodeAlarmRoutes from "./routes/noCodeAlarmRoutes";
 import alarmRoutes from "./routes/alarmRoutes";
+import { startAlarmRecoveryMonitor, initializeAlarmLight } from "./services/alarm-state";
 import { startNoCodeAlarmMonitor } from "./services/no-code-alarm";
 import { logger } from "./utils/logger";
 import { initializeDatabase } from "./services/db";
@@ -22,7 +23,6 @@ import { initializeScheduler } from "./services/scheduler";
 import { initializePostgresDB } from "./services/db-setup-postgres";
 import { checkPoolHealth } from "./services/pg-pool";
 import { startSchedulers } from "./scheduler";
-import { sendHexCommand, SerialPortType } from "./services/serial";
 
 // 加载环境变量
 dotenv.config();
@@ -162,6 +162,7 @@ async function startApplication() {
 
       // 无喷码报警周期评估（依赖质量跳过状态，故只在数据库可用时启动）
       startNoCodeAlarmMonitor();
+      startAlarmRecoveryMonitor();
     }
 
     // 健康检查路由
@@ -257,10 +258,8 @@ async function startApplication() {
 
         // 6. 启动时初始化指示灯为正常状态（绿灯）
         try {
-          await sendHexCommand([0xa0, 0x07, 0x00, 0xa7], SerialPortType.ALARM); // 关闭红灯+蜂鸣
-          await sendHexCommand([0xa0, 0x03, 0x00, 0xa3], SerialPortType.ALARM); // 关闭红灯
-          await sendHexCommand([0xa0, 0x02, 0x01, 0xa3], SerialPortType.ALARM); // 打开绿灯
-          logger.info("✅ 指示灯已初始化为正常状态（绿灯）");
+          await initializeAlarmLight();
+          logger.info("✅ 指示灯初始化处理完成");
         } catch (e) {
           logger.warn(`指示灯初始化失败（串口可能未连接）: ${e}`);
         }

@@ -1,195 +1,12 @@
-/**
- * 无喷码报警 + 报警原因集合 测试
- *
- * 运行：npx ts-node scripts/test-no-code-alarm.ts
- *
- * 状态机接受显式 now，外部依赖（质量跳过、报警动作、灯控）全部可注入，
- * 因此可以纯同步推进虚拟时钟，不需要真的等 30 秒，也不碰串口和数据库。
- */
-
-process.env.NO_CODE_ALARM_ENABLED = "true";
-
-// 必须用 require：import 语句会被提升到上面的赋值之前，模块就读不到这个开关了
-const noCodeAlarm: typeof import("../src/services/no-code-alarm") = require("../src/services/no-code-alarm");
+/** Shared light regression. Frame-count state machine: test-no-code-frames.ts. */
 const alarmState: typeof import("../src/services/alarm-state") = require("../src/services/alarm-state");
-
-const {
-  reportCamera,
-  evaluate,
-  getStatus,
-  resetNoCodeAlarmState,
-  __setDepsForTest,
-} = noCodeAlarm;
-
-const CAMS = ["192.168.1.120", "192.168.1.121", "192.168.1.122"];
-const T0 = 1_700_000_000_000;
-
-let passed = 0;
-let failed = 0;
-
-/**
- * 排空微任务队列。
- * evaluate() 触发的报警动作是异步的（先 await 质量跳过查询），
- * 同步的上报循环跑完时它还没落地，断言前必须先 flush。
- */
-const flush = () => new Promise((resolve) => setImmediate(resolve));
-
+let passed = 0, failed = 0;
+const flush = () => new Promise(resolve => setImmediate(resolve));
 const check = (name: string, actual: unknown, expected: unknown) => {
-  if (actual === expected) {
-    console.log(`✅ ${name}`);
-    passed++;
-  } else {
-    console.error(`❌ ${name} —— 期望 ${expected}，实际 ${actual}`);
-    failed++;
-  }
+  if (actual === expected) { console.log(`✅ ${name}`); passed++; }
+  else { console.error(`❌ ${name}: expected ${expected}, got ${actual}`); failed++; }
 };
-
-// ==================== 无喷码状态机 ====================
-
-let alarms: { detail: string }[] = [];
-let bypassed = false;
-// 模拟报警原因集合，用于验证 active 的派生
-let noCodeReasonActive = false;
-
-const setup = () => {
-  resetNoCodeAlarmState();
-  alarms = [];
-  bypassed = false;
-  noCodeReasonActive = false;
-  __setDepsForTest({
-    isBypassActive: async () => bypassed,
-    raiseAlarm: async (detail) => {
-      alarms.push({ detail });
-      noCodeReasonActive = true;
-    },
-    isNoCodeAlarmActive: () => noCodeReasonActive,
-  });
-};
-
-/** 三路相机在 [from, to] 区间内每秒各上报一次，frameAgeMs 视为 0（刚拿到新帧） */
-const reportAll = (from: number, to: number, hasCode: boolean, cams = CAMS) => {
-  for (let t = from; t <= to; t += 1000) {
-    for (const ip of cams) reportCamera(ip, hasCode, 0, t);
-  }
-};
-
 async function main() {
-console.log("---- 无喷码状态机 ----");
-
-// 1. 三路持续无喷码 30s → 报警一次
-setup();
-reportAll(T0, T0 + 30_000, false);
-await flush();
-check("三路持续无喷码 30 秒触发报警", alarms.length, 1);
-
-// 2. 只持续 29s → 不报警
-setup();
-reportAll(T0, T0 + 29_000, false);
-await flush();
-check("持续 29 秒不报警", alarms.length, 0);
-
-// 3. 中途某路检出喷码 → 计时清零
-setup();
-reportAll(T0, T0 + 20_000, false);
-reportCamera(CAMS[1], true, 0, T0 + 21_000);
-reportAll(T0 + 21_000, T0 + 40_000, false); // 距打断仅 19s
-await flush();
-check("中途检出喷码后计时清零", alarms.length, 0);
-
-// 3b. 打断后重新满 30s → 报警
-setup();
-reportAll(T0, T0 + 20_000, false);
-reportCamera(CAMS[1], true, 0, T0 + 21_000);
-reportAll(T0 + 21_000, T0 + 55_000, false);
-await flush();
-check("打断后重新满 30 秒再报警", alarms.length, 1);
-
-// 4. 只有 2 路上报 → 永不报警
-setup();
-reportAll(T0, T0 + 60_000, false, CAMS.slice(0, 2));
-await flush();
-check("只有 2 路相机时不报警", alarms.length, 0);
-
-// 5. 某路 tcp-server 停止上报（停机/断线）→ 不报警
-setup();
-reportAll(T0, T0 + 5_000, false);
-for (let t = T0 + 6_000; t <= T0 + 60_000; t += 1000) {
-  reportCamera(CAMS[0], false, 0, t);
-  reportCamera(CAMS[1], false, 0, t);
-}
-await flush();
-check("某路停止上报时不报警", alarms.length, 0);
-
-// 6. 相机还在上报，但那一路的帧本身很旧（相机卡死）→ 不报警
-setup();
-for (let t = T0; t <= T0 + 60_000; t += 1000) {
-  reportCamera(CAMS[0], false, 0, t);
-  reportCamera(CAMS[1], false, 0, t);
-  reportCamera(CAMS[2], false, 10_000, t); // 最新帧已是 10 秒前
-}
-await flush();
-check("某路帧陈旧时不报警", alarms.length, 0);
-
-// 7. 报警后条件持续 → 每 30 秒再报一次
-setup();
-reportAll(T0, T0 + 60_000, false);
-await flush();
-check("条件持续时每 30 秒重复报警", alarms.length, 2);
-
-// 8. 数据新鲜但未满 30s 不报警
-setup();
-reportAll(T0, T0 + 3_000, false);
-evaluate(T0 + 4_000);
-await flush();
-check("数据新鲜但未满 30 秒不报警", alarms.length, 0);
-
-// 9. 历史上出现过的第 4 个 IP 会被剔除，不能让判定永久失效
-//    幽灵条目要等满 NO_CODE_STALE_MS 才被剔除，期间 size===4 判定不成立，
-//    所以 30 秒窗口整体后移约 6 秒，60 秒内只够报一次（修复前是一次都不报）。
-setup();
-reportCamera("192.168.1.199", false, 0, T0); // 换 IP / 临时调试相机，只出现一次
-reportAll(T0, T0 + 60_000, false);
-await flush();
-check("出现过第 4 个 IP 后仍能正常报警", alarms.length, 1);
-await flush();
-check(
-  "陈旧的第 4 个 IP 已被移出状态表",
-  getStatus(T0 + 60_000).cameras.length,
-  3
-);
-
-// 10. 质量跳过期间：既不报警，也不能把 active 置起来（否则前端会弹横幅）
-setup();
-bypassed = true;
-reportAll(T0, T0 + 60_000, false);
-await flush();
-check("质量跳过期间不报警", alarms.length, 0);
-await flush();
-check("质量跳过期间 active 保持 false", getStatus(T0 + 60_000).active, false);
-await flush();
-check("质量跳过期间不记录报警时刻", getStatus(T0 + 60_000).lastAlarmAt, null);
-
-// 11. active 由报警原因集合派生：原因被清除后立刻变 false
-setup();
-reportAll(T0, T0 + 30_000, false);
-await flush();
-check("报警后 active 为 true", getStatus(T0 + 30_000).active, true);
-noCodeReasonActive = false; // 模拟 /api/alarm/clear { reason: "noCode" }
-await flush();
-check("清除原因后 active 为 false", getStatus(T0 + 30_000).active, false);
-
-// 12. 清除报警后条件仍成立 → 30 秒后再次报警
-setup();
-reportAll(T0, T0 + 30_000, false);
-noCodeReasonActive = false;
-reportAll(T0 + 31_000, T0 + 61_000, false);
-await flush();
-check("清除后问题未解决会再次报警", alarms.length, 2);
-
-// ==================== 报警原因集合 ====================
-
-console.log("\n---- 报警原因集合（共享的那盏灯）----");
-
 let lightActions: string[] = [];
 alarmState.__setLightControlForTest({
   applyAlarm: async () => {
@@ -253,6 +70,33 @@ await flush();
 check("clearAllAlarms 后无剩余原因", alarmState.getAlarmState().reasons.length, 0);
 await flush();
 check("clearAllAlarms 下发了绿灯指令", lightActions.join(","), "normal");
+
+const noCode = require("../src/services/no-code-alarm");
+const lightController = require("../src/controllers/lightController");
+noCode.__setDepsForTest({
+  loadConfig: async () => null, saveConfig: async () => {}, isBypassActive: async () => false,
+});
+await noCode.updateConfig({enabled: true, frameThreshold: 300});
+const before = noCode.getStatus().resetToken;
+await alarmState.raiseAlarm("defect");
+await noCode.reportCamera({clientIp:"a",hasCode:false,consecutiveNoCodeFrames:300,frameAgeMs:0,resetToken:before,sessionId:"test",sequence:1});
+const response = {status: (_: number) => response, json: (body: unknown) => body};
+await lightController.setNormalState({}, response);
+check("全局恢复绿灯也重置无喷码计数", noCode.getStatus().resetToken !== before, true);
+await noCode.evaluate();
+check("全局清除后旧计数不会再次报警", alarmState.getAlarmState().alarming, false);
+
+let failNormal = true;
+alarmState.__setLightControlForTest({
+  applyAlarm: async () => {},
+  applyNormal: async () => { if (failNormal) { failNormal = false; throw new Error("normal hardware failed"); } },
+});
+let clearFailed = false;
+try { await noCode.clearNoCodeAlarm(true); } catch { clearFailed = true; }
+check("模拟恢复绿灯失败", clearFailed, true);
+await alarmState.raiseAlarm("defect");
+await noCode.evaluate();
+check("重试恢复绿灯不能清除新来的缺陷报警", alarmState.isReasonActive("defect"), true);
 
 console.log(`\n通过 ${passed} 项，失败 ${failed} 项`);
 process.exit(failed > 0 ? 1 : 0);

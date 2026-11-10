@@ -1,225 +1,175 @@
+import { randomUUID } from "crypto";
 import { isQualityBypassActive } from "../utils/qualityBypass";
-import {
-  raiseAlarm as raiseSharedAlarm,
-  isReasonActive,
-} from "./alarm-state";
+import { getParameter, saveParameter } from "./db";
+import { raiseAlarm, clearAlarm, clearAllAlarms, isReasonActive } from "./alarm-state";
 import { logger } from "../utils/logger";
 
-/**
- * 无喷码报警状态机。
- *
- * 三路相机各自由独立的 tcp-server 实例接收，单个实例只看得到一路，
- * 因此聚合放在 weixing-service：每个 tcp-server 每秒上报自己那一路的
- * 最新喷码状态，这里汇总判定。
- *
- * 判定「三路同时无喷码」需同时满足：
- *   1. 数据新鲜的相机数量 === NO_CODE_CAMERA_COUNT
- *   2. 每一路最新帧都在 NO_CODE_STALE_MS 以内（停机/断线/上报中断都不误报）
- *   3. 每一路最新帧 has_code === false
- *
- * 陈旧条目会在每次评估时从状态表剔除，否则历史上出现过的 IP（相机换 IP、
- * 临时接入的调试相机）会永远占着位置，让第 1 条永不成立、报警静默失效。
- *
- * 该状态连续成立满 NO_CODE_ALARM_DURATION_MS → 报警。
- * 报警后计时重新开始：故障持续存在时每 30 秒重复报警一次，
- * 因此用户手动清除报警后若问题未解决仍会再次报警。
- */
-
-export const NO_CODE_ALARM_ENABLED =
-  process.env.NO_CODE_ALARM_ENABLED === "true";
-
-export const NO_CODE_ALARM_DURATION_MS = parseInt(
-  process.env.NO_CODE_ALARM_DURATION_MS || "30000",
-  10
-);
-
-export const NO_CODE_STALE_MS = parseInt(
-  process.env.NO_CODE_STALE_MS || "5000",
-  10
-);
-
-export const NO_CODE_CAMERA_COUNT = parseInt(
-  process.env.NO_CODE_CAMERA_COUNT || "3",
-  10
-);
-
-export const NO_CODE_EVAL_INTERVAL_MS = parseInt(
-  process.env.NO_CODE_EVAL_INTERVAL_MS || "1000",
-  10
-);
-
-interface CameraState {
+export interface NoCodeConfig { enabled: boolean; frameThreshold: number }
+export interface CameraReport {
+  clientIp: string;
   hasCode: boolean;
-  /** 该路最新一帧的时刻（由上报里的 frameAgeMs 换算，避免依赖各容器时钟一致） */
-  frameAt: number;
+  consecutiveNoCodeFrames: number;
+  frameAgeMs: number;
+  resetToken: string | null;
+  sessionId: string;
+  sequence: number;
 }
-
-export interface NoCodeAlarmStatus {
-  enabled: boolean;
-  active: boolean;
-  durationMs: number;
-  cameras: { clientIp: string; hasCode: boolean; frameAgeMs: number }[];
-  noCodeElapsedMs: number;
-  lastAlarmAt: string | null;
-}
-
+interface CameraState extends CameraReport { frameAt: number }
+const PARAM_KEY = "noCodeAlarm";
+export const NO_CODE_STALE_MS = Number(process.env.NO_CODE_STALE_MS) > 0
+  ? Number(process.env.NO_CODE_STALE_MS) : 5000;
+const defaults: NoCodeConfig = {
+  enabled: process.env.NO_CODE_ALARM_ENABLED === "true",
+  frameThreshold: 300,
+};
+let config = { ...defaults };
+let loaded = false;
+let resetToken = randomUUID();
+let lastAlarmAt: string | null = null;
+let alarmCameras: { clientIp: string; consecutiveNoCodeFrames: number }[] = [];
+let bypassed = false;
+let pendingRaise = false;
+let pendingClear = false;
 const latest = new Map<string, CameraState>();
-let noCodeSince: number | null = null;
-let lastAlarmAt: number | null = null;
-let evalTimer: ReturnType<typeof setInterval> | null = null;
-
-/** 外部依赖，测试时可整体替换，使得报警的完整路径（含质量跳过分支）都能被覆盖 */
-interface Deps {
-  isBypassActive: () => Promise<boolean>;
-  raiseAlarm: (detail: string) => Promise<void>;
-  isNoCodeAlarmActive: () => boolean;
-}
-
-const defaultDeps: Deps = {
+let timer: ReturnType<typeof setInterval> | null = null;
+const defaultDeps = {
   isBypassActive: isQualityBypassActive,
-  raiseAlarm: (detail) => raiseSharedAlarm("noCode", detail),
+  raiseAlarm: (detail: string) => raiseAlarm("noCode", detail),
+  clearAlarm: () => clearAlarm("noCode").then(() => {}),
+  clearAllAlarms,
   isNoCodeAlarmActive: () => isReasonActive("noCode"),
+  loadConfig: async (): Promise<NoCodeConfig | null> => (await getParameter(PARAM_KEY))?.value ?? null,
+  saveConfig: async (next: NoCodeConfig): Promise<void> => { await saveParameter(PARAM_KEY, next); },
 };
-
-let deps: Deps = defaultDeps;
-
-/**
- * 执行报警动作。返回是否真的报了警 —— 质量跳过期间返回 false，
- * 这样 lastAlarmAt 不会被置位，前端也就不会弹出横幅。
- */
-const doAlarm = async (cameras: string[]): Promise<boolean> => {
-  if (await deps.isBypassActive()) {
-    logger.info("质量跳过已开启，跳过无喷码报警");
-    return false;
-  }
-
-  await deps.raiseAlarm(cameras.join(", "));
-  return true;
-};
-
-/** 剔除陈旧条目，防止历史 IP 永久占位导致报警静默失效 */
-const pruneStale = (now: number): void => {
-  for (const [clientIp, state] of latest.entries()) {
-    if (now - state.frameAt > NO_CODE_STALE_MS) {
-      latest.delete(clientIp);
-      logger.info(`相机 ${clientIp} 数据陈旧，已移出无喷码判定`);
-    }
-  }
-};
-
-const isAllNoCode = (now: number): boolean => {
-  if (latest.size !== NO_CODE_CAMERA_COUNT) return false;
-
+let deps = defaultDeps;
+// Serialize config, reports and hardware actions: disable/clear cannot race an in-flight raise.
+let pending: Promise<unknown> = Promise.resolve();
+function serial<T>(work: () => Promise<T>): Promise<T> {
+  const result = pending.then(work);
+  pending = result.catch(() => {});
+  return result;
+}
+export function validateConfig(value: unknown): asserts value is Partial<NoCodeConfig> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("配置必须是对象");
+  const c = value as Partial<NoCodeConfig>;
+  if (c.enabled !== undefined && typeof c.enabled !== "boolean") throw new Error("enabled 必须是布尔值");
+  if (c.frameThreshold !== undefined && (!Number.isSafeInteger(c.frameThreshold) || c.frameThreshold < 1))
+    throw new Error("连续无喷码张数必须是正整数");
+}
+async function load() {
+  if (loaded) return;
+  const saved = await deps.loadConfig();
+  if (saved) { validateConfig(saved); config = { ...defaults, ...saved }; }
+  loaded = true;
+}
+function resetCounts() {
+  resetToken = randomUUID();
   for (const state of latest.values()) {
-    if (state.hasCode) return false;
+    state.consecutiveNoCodeFrames = 0;
+    state.resetToken = null;
   }
-  return true;
-};
-
-/**
- * 接收单路相机的喷码状态上报。
- * frameAgeMs 是「该路最新一帧距上报时刻过去了多久」，由上报方计算，
- * 这样跨容器不需要时钟同步。
- */
-export const reportCamera = (
-  clientIp: string,
-  hasCode: boolean,
-  frameAgeMs: number,
-  now: number = Date.now()
-): void => {
-  if (!NO_CODE_ALARM_ENABLED) return;
-  if (!clientIp || typeof hasCode !== "boolean") return;
-
-  const age = Number.isFinite(frameAgeMs) && frameAgeMs > 0 ? frameAgeMs : 0;
-  latest.set(clientIp, { hasCode, frameAt: now - age });
-  evaluate(now);
-};
-
-/** 评估当前状态，必要时触发报警。由上报和周期定时器调用。 */
-export const evaluate = (now: number = Date.now()): void => {
-  if (!NO_CODE_ALARM_ENABLED) return;
-
-  pruneStale(now);
-
-  if (!isAllNoCode(now)) {
-    if (noCodeSince !== null) {
-      logger.info("无喷码状态中断，计时清零");
-      noCodeSince = null;
-    }
-    return;
-  }
-
-  if (noCodeSince === null) {
-    noCodeSince = now;
-    logger.info(`检测到 ${NO_CODE_CAMERA_COUNT} 路同时无喷码，开始计时`);
-    return;
-  }
-
-  if (now - noCodeSince < NO_CODE_ALARM_DURATION_MS) return;
-
-  const cameras = Array.from(latest.keys()).sort();
-  logger.warn(
-    `无喷码报警触发: ${cameras.join(", ")} 持续 ${now - noCodeSince}ms 无喷码`
-  );
-
-  // 先重置计时，再执行报警动作：避免异步报警期间被重复触发
-  noCodeSince = now;
-
-  doAlarm(cameras)
-    .then((raised) => {
-      // 只有真的报了警才记录时刻；被质量跳过挡下时不记，前端不弹横幅
-      if (raised) lastAlarmAt = now;
-    })
-    .catch((err) => {
-      logger.error(`无喷码报警动作失败: ${err}`);
-    });
-};
-
-/**
- * 供前端轮询的状态。
- * active 直接由共享的报警原因集合派生，而不是本地标志 ——
- * 这样质量跳过挡下的"报警"不会显示，通过 /api/alarm/clear 的清除也能立刻反映。
- */
-export const getStatus = (now: number = Date.now()): NoCodeAlarmStatus => ({
-  enabled: NO_CODE_ALARM_ENABLED,
-  active: deps.isNoCodeAlarmActive(),
-  durationMs: NO_CODE_ALARM_DURATION_MS,
-  cameras: Array.from(latest.entries()).map(([clientIp, s]) => ({
-    clientIp,
-    hasCode: s.hasCode,
-    frameAgeMs: now - s.frameAt,
-  })),
-  noCodeElapsedMs: noCodeSince === null ? 0 : now - noCodeSince,
-  lastAlarmAt: lastAlarmAt === null ? null : new Date(lastAlarmAt).toISOString(),
+}
+async function clearInternal(all = false) {
+  resetCounts();
+  pendingRaise = false;
+  pendingClear = true;
+  await (all ? deps.clearAllAlarms() : deps.clearAlarm());
+  pendingClear = false;
+}
+export const initializeNoCodeAlarm = () => serial(load);
+export const updateConfig = (patch: Partial<NoCodeConfig>) => serial(async () => {
+  validateConfig(patch);
+  await load();
+  const next = { ...config, enabled: patch.enabled ?? config.enabled, frameThreshold: patch.frameThreshold ?? config.frameThreshold };
+  await deps.saveConfig(next);
+  const changed = next.enabled !== config.enabled || next.frameThreshold !== config.frameThreshold;
+  config = next;
+  if (changed) await clearInternal();
+  return getStatus();
 });
+export const clearNoCodeAlarm = (all = false) => serial(() => clearInternal(all));
 
-export const startNoCodeAlarmMonitor = (): void => {
-  if (!NO_CODE_ALARM_ENABLED) {
-    logger.info("无喷码报警未启用 (NO_CODE_ALARM_ENABLED)");
+function prune(now: number) {
+  for (const [ip, state] of latest) {
+    if (now - state.frameAt > NO_CODE_STALE_MS) latest.delete(ip);
+  }
+}
+async function syncBypass() {
+  const nextBypass = await deps.isBypassActive();
+  if (nextBypass !== bypassed) {
+    bypassed = nextBypass;
+    await clearInternal();
+  }
+}
+async function evaluateInternal(now: number) {
+  await load();
+  await syncBypass();
+  prune(now);
+  if (pendingClear) {
+    // Do not replay clear-all: a new defect may have arrived since the failure.
+    await deps.clearAlarm();
+    pendingClear = false;
+  }
+  if (!config.enabled || bypassed) return;
+  if (pendingRaise) {
+    await deps.raiseAlarm([...latest.keys()].sort().join(", "));
+    pendingRaise = false;
     return;
   }
-  if (evalTimer) return;
-
-  evalTimer = setInterval(() => evaluate(), NO_CODE_EVAL_INTERVAL_MS);
-  logger.info(
-    `无喷码报警已启用: ${NO_CODE_CAMERA_COUNT} 路同时无喷码持续 ${NO_CODE_ALARM_DURATION_MS}ms 报警，陈旧阈值 ${NO_CODE_STALE_MS}ms`
-  );
+  if (deps.isNoCodeAlarmActive() || latest.size === 0) return;
+  if (![...latest.values()].every(c => c.resetToken === resetToken && c.consecutiveNoCodeFrames >= config.frameThreshold)) return;
+  alarmCameras = [...latest.values()].map(c => ({clientIp: c.clientIp, consecutiveNoCodeFrames: c.consecutiveNoCodeFrames}));
+  lastAlarmAt = new Date(now).toISOString();
+  pendingRaise = true;
+  await deps.raiseAlarm([...latest.keys()].sort().join(", "));
+  pendingRaise = false;
+}
+export const evaluate = (now = Date.now()) => serial(() => evaluateInternal(now));
+export const reportCamera = (report: CameraReport, now = Date.now()) => serial(async () => {
+  await load();
+  // Check bypass before accepting a report: both transitions invalidate old counters.
+  await syncBypass();
+  prune(now);
+  const previous = latest.get(report.clientIp);
+  if (previous?.sessionId === report.sessionId && previous.sequence >= report.sequence) return getStatus(now);
+  if (report.frameAgeMs > NO_CODE_STALE_MS) {
+    latest.delete(report.clientIp);
+    return getStatus(now);
+  }
+  latest.set(report.clientIp, {
+    ...report, frameAt: now - report.frameAgeMs,
+    consecutiveNoCodeFrames: report.resetToken === resetToken && config.enabled && !bypassed
+      ? report.consecutiveNoCodeFrames : 0,
+  });
+  await evaluateInternal(now);
+  return getStatus(now);
+});
+export const getStatus = (now = Date.now()) => ({
+  ...config,
+  active: deps.isNoCodeAlarmActive(),
+  resetToken,
+  bypassed,
+  cameras: [...latest.values()].filter(c => now - c.frameAt <= NO_CODE_STALE_MS).map(c => ({
+    clientIp: c.clientIp, hasCode: c.hasCode, frameAgeMs: now - c.frameAt,
+    consecutiveNoCodeFrames: c.consecutiveNoCodeFrames,
+  })),
+  lastAlarmAt,
+  alarmCameras,
+});
+export const startNoCodeAlarmMonitor = () => {
+  if (timer) return;
+  // Monitor must run even when disabled so the runtime switch can enable it.
+  timer = setInterval(() => {
+    evaluate().catch(err => logger.error(`无喷码报警评估失败: ${err}`));
+  }, 1000);
+  initializeNoCodeAlarm().catch(err => logger.error(`无喷码配置加载失败: ${err}`));
 };
-
-export const stopNoCodeAlarmMonitor = (): void => {
-  if (!evalTimer) return;
-  clearInterval(evalTimer);
-  evalTimer = null;
+export const stopNoCodeAlarmMonitor = () => {
+  if (timer) clearInterval(timer);
+  timer = null;
 };
-
-/** 仅供测试：清空状态 */
-export const resetNoCodeAlarmState = (): void => {
-  latest.clear();
-  noCodeSince = null;
-  lastAlarmAt = null;
-};
-
-/** 仅供测试：替换外部依赖 */
-export const __setDepsForTest = (next: Partial<Deps> | null): void => {
+export const resetNoCodeAlarmState = () => { resetCounts(); latest.clear(); lastAlarmAt = null; alarmCameras = []; bypassed = false; pendingRaise = false; pendingClear = false; };
+export const __setDepsForTest = (next: Partial<typeof defaultDeps> | null) => {
   deps = next ? { ...defaultDeps, ...next } : defaultDeps;
+  loaded = false;
 };

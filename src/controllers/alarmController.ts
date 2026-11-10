@@ -6,6 +6,7 @@ import {
   isAlarmReason,
   ALARM_REASONS,
 } from "../services/alarm-state";
+import { clearNoCodeAlarm } from "../services/no-code-alarm";
 import { logger } from "../utils/logger";
 
 /**
@@ -48,7 +49,9 @@ export async function clearAlarmByReason(req: Request, res: Response) {
   }
 
   try {
-    const recovered = await clearAlarm(reason);
+    const recovered = reason === "noCode"
+      ? (await clearNoCodeAlarm(), !getAlarmState().alarming)
+      : await clearAlarm(reason);
     return res
       .status(200)
       .json({ success: true, recovered, data: getAlarmState() });

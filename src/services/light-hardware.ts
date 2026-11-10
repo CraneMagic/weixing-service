@@ -12,19 +12,14 @@ import { logger } from "../utils/logger";
  * 供 HTTP 接口和服务内部（如无喷码报警）共用。
  */
 export async function applyNormalState(): Promise<void> {
-  // 关闭红灯+蜂鸣: A0 07 00 A7
-  await sendHexCommand([0xa0, 0x07, 0x00, 0xa7], SerialPortType.ALARM);
-
-  // 关闭红灯: A0 03 00 A3
-  await sendHexCommand([0xa0, 0x03, 0x00, 0xa3], SerialPortType.ALARM);
-
-  // 打开绿灯: A0 02 01 A3
-  await sendHexCommand([0xa0, 0x02, 0x01, 0xa3], SerialPortType.ALARM);
-
-  // 关闭继电器2: A0 02 00 A2
-  await turnOffRelay2();
-
-  logger.info("已切换到正常状态: 绿灯开，红灯关，继电器2关");
+  async function requireSent(sent: Promise<boolean>, action: string): Promise<void> {
+    if (!(await sent)) throw new Error(`${action}失败`);
+  }
+  await requireSent(sendHexCommand([0xa0, 0x07, 0x00, 0xa7], SerialPortType.ALARM), "关闭红灯及蜂鸣指令发送");
+  await requireSent(sendHexCommand([0xa0, 0x03, 0x00, 0xa3], SerialPortType.ALARM), "关闭红灯指令发送");
+  await requireSent(sendHexCommand([0xa0, 0x02, 0x01, 0xa3], SerialPortType.ALARM), "打开绿灯指令发送");
+  await requireSent(turnOffRelay2(), "关闭继电器2指令发送");
+  logger.info("恢复正常状态的全部指令已发送: 绿灯开，红灯关，继电器2关");
 }
 
 /**

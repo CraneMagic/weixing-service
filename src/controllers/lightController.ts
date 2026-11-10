@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import { sendHexCommand, SerialPortType } from "../services/serial";
 import { applyAlarmState } from "../services/light-hardware";
-import { clearAllAlarms } from "../services/alarm-state";
+import { clearNoCodeAlarm } from "../services/no-code-alarm";
 import { logger } from "../utils/logger";
 
 /**
@@ -10,7 +10,7 @@ import { logger } from "../utils/logger";
 export async function setNormalState(req: Request, res: Response) {
   try {
     // 走报警原因集合，保证「灯绿了但还有原因挂着」不会发生
-    await clearAllAlarms();
+    await clearNoCodeAlarm(true);
 
     return res.status(200).json({
       success: true,
