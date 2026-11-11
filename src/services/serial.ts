@@ -16,6 +16,113 @@ const serialEventEmitter = new EventEmitter();
 // 串口实例映射
 const serialPorts: Map<SerialPortType, SerialPort> = new Map();
 const parsers: Map<SerialPortType, ReadlineParser> = new Map();
+const openingPorts = new Map<SerialPortType, Promise<boolean>>();
+// A destroyed Node stream does not close SerialPort's native binding. Keep failed
+// connections reachable until native close has actually succeeded.
+const retiredPorts = new Map<SerialPortType, Set<SerialPort>>();
+const closingRetiredPorts = new Map<SerialPort, Promise<void>>();
+
+function operationTimeoutMs(): number {
+  const configured = Number(process.env.SERIAL_OPERATION_TIMEOUT_MS);
+  return Number.isFinite(configured) && configured > 0 ? configured : 3000;
+}
+
+function forgetPort(type: SerialPortType, port: SerialPort): void {
+  if (serialPorts.get(type) !== port) return;
+  serialPorts.delete(type);
+  parsers.delete(type);
+}
+
+function finishRetirement(type: SerialPortType, port: SerialPort): void {
+  retiredPorts.get(type)?.delete(port);
+  port.destroy();
+}
+
+function retirePort(type: SerialPortType, port: SerialPort): void {
+  forgetPort(type, port);
+  port.unpipe();
+  if (!retiredPorts.has(type)) retiredPorts.set(type, new Set());
+  retiredPorts.get(type)!.add(port);
+  if (!port.isOpen && !port.opening && !port.closing) finishRetirement(type, port);
+}
+
+function closeRetiredPort(type: SerialPortType, port: SerialPort): Promise<void> {
+  const pending = closingRetiredPorts.get(port);
+  if (pending) return pending;
+  if (port.opening) return Promise.reject(new Error(`${type}串口上次打开操作尚未结束，请检查连接后重试`));
+  if (!port.isOpen && !port.closing) {
+    finishRetirement(type, port);
+    return Promise.resolve();
+  }
+  const attempt = new Promise<void>((resolve, reject) => {
+    let settled = false;
+    const finish = (error?: Error | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      port.removeListener('close', onClose);
+      port.removeListener('error', onError);
+      if (error) reject(error); // Preserve the native handle for the next recovery attempt.
+      else { finishRetirement(type, port); resolve(); }
+    };
+    const onClose = () => finish();
+    const onError = (error: Error) => finish(error);
+    const timer = setTimeout(() => finish(new Error(`${type}故障串口关闭超时，尚未确认释放设备，请检查连接后重试`)), operationTimeoutMs());
+    port.once('close', onClose);
+    port.once('error', onError);
+    // Never open a second connection while a previous native close is pending.
+    if (!port.closing) {
+      try { port.close(error => finish(error)); }
+      catch (error) { finish(error instanceof Error ? error : new Error(String(error))); }
+    }
+  });
+  closingRetiredPorts.set(port, attempt);
+  const finished = () => { if (closingRetiredPorts.get(port) === attempt) closingRetiredPorts.delete(port); };
+  void attempt.then(finished, finished);
+  return attempt;
+}
+
+function serialOperation(
+  type: SerialPortType,
+  port: SerialPort,
+  action: string,
+  start: (callback: (error?: Error | null) => void) => void
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const startedAt = Date.now();
+    const timeout = operationTimeoutMs();
+    const finish = (error?: Error | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      port.removeListener('error', onError);
+      port.removeListener('close', onClose);
+      if (error) {
+        retirePort(type, port);
+        logger.error(`${type}串口${action}失败 (${Date.now()-startedAt}ms): ${error.message}`);
+        reject(error);
+      } else resolve();
+    };
+    const onError = (error: Error) => finish(error);
+    const onClose = () => finish(action === '关闭' ? undefined : new Error(`${type}串口在${action}时断开`));
+    const timer = setTimeout(() => finish(new Error(`${type}串口${action}超时 (${timeout}ms)，请检查串口连接`)), timeout);
+    port.once('error', onError);
+    port.once('close', onClose);
+    try {
+      start(error => {
+        if (settled) {
+          if (action === '打开') {
+            retirePort(type, port);
+            void closeRetiredPort(type, port).catch(error => logger.error(`回收迟到的${type}串口失败: ${error}`));
+          }
+          return;
+        }
+        finish(error);
+      });
+    } catch (error) { finish(error instanceof Error ? error : new Error(String(error))); }
+  });
+}
 
 // 相机供电状态响应监听
 let cameraPowerStatusCallback: ((status: boolean) => void) | null = null;
@@ -79,70 +186,47 @@ function getSerialPortConfig(portType: SerialPortType): {
 export async function initializeSerialPort(
   portType: SerialPortType = SerialPortType.ALARM
 ): Promise<boolean> {
-  try {
-    const existingPort = serialPorts.get(portType);
-    if (existingPort && existingPort.isOpen) {
-      return true;
-    }
+  const existing = serialPorts.get(portType);
+  if (existing?.isOpen && !retiredPorts.get(portType)?.size) return true;
+  const opening = openingPorts.get(portType);
+  if (opening) return opening;
 
+  const attempt = (async () => {
+    for (const retired of [...(retiredPorts.get(portType) ?? [])]) await closeRetiredPort(portType, retired);
     const config = getSerialPortConfig(portType);
-    logger.info(
-      `正在打开${portType}串口: ${config.path} @ ${config.baudRate}bps`
-    );
-
-    const serialPort = new SerialPort({
-      path: config.path,
-      baudRate: config.baudRate,
-      autoOpen: false,
-    });
-
-    const parser = serialPort.pipe(new ReadlineParser({ delimiter: "\r\n" }));
-
-    // 设置事件监听器
-    serialPort.on("open", () => {
+    logger.info(`正在打开${portType}串口: ${config.path} @ ${config.baudRate}bps`);
+    const port = new SerialPort({ ...config, autoOpen: false });
+    const parser = port.pipe(new ReadlineParser({ delimiter: "\r\n" }));
+    port.on('open', () => {
       logger.info(`${portType}串口已打开`);
-      serialEventEmitter.emit("open", portType);
+      serialEventEmitter.emit('open', portType);
     });
-
-    serialPort.on("error", (error) => {
+    port.on('error', error => {
       logger.error(`${portType}串口错误: ${error.message}`);
-      serialEventEmitter.emit("error", error, portType);
+      retirePort(portType, port);
+      // EventEmitter treats an unobserved 'error' as a process-level exception.
+      if (serialEventEmitter.listenerCount('error') > 0) serialEventEmitter.emit('error', error, portType);
     });
-
-    serialPort.on("close", () => {
+    port.on('close', () => {
+      forgetPort(portType, port);
+      if (retiredPorts.get(portType)?.has(port)) finishRetirement(portType, port);
       logger.info(`${portType}串口已关闭`);
-      serialEventEmitter.emit("close", portType);
+      serialEventEmitter.emit('close', portType);
     });
-
-    parser.on("data", (data: string) => {
+    parser.on('data', (data: string) => {
       logger.debug(`收到${portType}串口数据: ${data}`);
-      serialEventEmitter.emit("data", data, portType);
-
-      // 解析相机供电状态响应
-      if (portType === SerialPortType.RELAY) {
-        parseCameraPowerStatus(data);
-      }
+      serialEventEmitter.emit('data', data, portType);
+      if (portType === SerialPortType.RELAY) parseCameraPowerStatus(data);
     });
-
-    // 打开串口
-    return new Promise((resolve, reject) => {
-      serialPort.open((error) => {
-        if (error) {
-          logger.error(`无法打开${portType}串口: ${error.message}`);
-          reject(error);
-          return;
-        }
-        // 保存串口实例
-        serialPorts.set(portType, serialPort);
-        parsers.set(portType, parser);
-        resolve(true);
-      });
-    });
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    logger.error(`${portType}串口初始化失败: ${errorMessage}`);
-    return false;
-  }
+    await serialOperation(portType, port, '打开', callback => port.open(callback));
+    serialPorts.set(portType, port);
+    parsers.set(portType, parser);
+    return true;
+  })();
+  openingPorts.set(portType, attempt);
+  const finished = () => { if (openingPorts.get(portType) === attempt) openingPorts.delete(portType); };
+  void attempt.then(finished, finished);
+  return attempt;
 }
 
 /**
@@ -163,108 +247,49 @@ export async function initializeAllSerialPorts(): Promise<boolean> {
 /**
  * 发送数据到指定串口
  */
+async function writeToPort(data: Buffer | string, portType: SerialPortType): Promise<boolean> {
+  let port = serialPorts.get(portType);
+  if (!port?.isOpen) {
+    await initializeSerialPort(portType);
+    port = serialPorts.get(portType);
+  }
+  if (!port?.isOpen) throw new Error(`${portType}串口未初始化`);
+  const current = port;
+  const detail = Buffer.isBuffer(data) ? data.toString('hex') : data;
+  logger.debug(`发送数据到${portType}串口 (${current.path}): ${detail}`);
+  await serialOperation(portType, current, '写入', callback => current.write(data, callback));
+  return true;
+}
+
 export async function sendData(
   data: string,
   portType: SerialPortType = SerialPortType.ALARM
 ): Promise<boolean> {
-  try {
-    let serialPort = serialPorts.get(portType);
-    if (!serialPort || !serialPort.isOpen) {
-      await initializeSerialPort(portType);
-      serialPort = serialPorts.get(portType);
-    }
-
-    return new Promise((resolve, reject) => {
-      if (!serialPort) {
-        reject(new Error(`${portType}串口未初始化`));
-        return;
-      }
-
-      logger.debug(`发送数据到${portType}串口: ${data}`);
-      serialPort.write(data, (error) => {
-        if (error) {
-          logger.error(`发送数据到${portType}串口错误: ${error.message}`);
-          reject(error);
-          return;
-        }
-        resolve(true);
-      });
-    });
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    logger.error(`发送数据到${portType}串口失败: ${errorMessage}`);
-    return false;
-  }
+  return writeToPort(data, portType);
 }
 
-/**
- * 发送16进制命令到指定串口
- * @param hexArray 16进制数组，如 [0xA0, 0x01, 0x01, 0xA2]
- * @param portType 串口类型，默认为报警串口
- */
+/** 发送16进制命令；打开和写入均有期限，失败后丢弃连接供下次重连。 */
 export async function sendHexCommand(
   hexArray: number[],
   portType: SerialPortType = SerialPortType.ALARM
 ): Promise<boolean> {
-  try {
-    let serialPort = serialPorts.get(portType);
-    if (!serialPort || !serialPort.isOpen) {
-      await initializeSerialPort(portType);
-      serialPort = serialPorts.get(portType);
-    }
-
-    return new Promise((resolve, reject) => {
-      if (!serialPort) {
-        reject(new Error(`${portType}串口未初始化`));
-        return;
-      }
-
-      const buffer = Buffer.from(hexArray);
-      logger.debug(
-        `发送16进制命令到${portType}串口: ${buffer.toString("hex")}`
-      );
-
-      serialPort.write(buffer, (error) => {
-        if (error) {
-          logger.error(`发送16进制命令到${portType}串口错误: ${error.message}`);
-          reject(error);
-          return;
-        }
-        resolve(true);
-      });
-    });
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    logger.error(`发送16进制命令到${portType}串口失败: ${errorMessage}`);
-    return false;
-  }
+  return writeToPort(Buffer.from(hexArray), portType);
 }
 
-/**
- * 关闭指定串口
- */
-export function closeSerialPort(
+/** 关闭指定串口；驱动不回调时也必须结束请求。 */
+export async function closeSerialPort(
   portType: SerialPortType = SerialPortType.ALARM
 ): Promise<boolean> {
-  return new Promise((resolve) => {
-    const serialPort = serialPorts.get(portType);
-    if (!serialPort || !serialPort.isOpen) {
-      resolve(true);
-      return;
-    }
-
-    serialPort.close((error) => {
-      if (error) {
-        logger.error(`关闭${portType}串口错误: ${error.message}`);
-        resolve(false);
-        return;
-      }
-      logger.info(`${portType}串口已正常关闭`);
-      serialPorts.delete(portType);
-      parsers.delete(portType);
-      resolve(true);
-    });
-  });
+  const port = serialPorts.get(portType);
+  if (!port?.isOpen) return true;
+  try {
+    await serialOperation(portType, port, '关闭', callback => port.close(callback));
+    forgetPort(portType, port);
+    return true;
+  } catch (error) {
+    logger.error(`关闭${portType}串口失败: ${error}`);
+    return false;
+  }
 }
 
 /**

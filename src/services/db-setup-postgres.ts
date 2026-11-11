@@ -1,3 +1,4 @@
+import { ensureAlarmExpirySchema } from './alarm-expiry';
 import pool from "./pg-pool";
 import { logger } from "../utils/logger";
 
@@ -168,6 +169,8 @@ export async function initializePostgresDB(): Promise<void> {
         );
       }
     }
+
+    await ensureAlarmExpirySchema(client);
 
     // 创建索引
     logger.info("🔗 创建索引...");

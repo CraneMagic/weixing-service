@@ -1,6 +1,5 @@
 import { Request, Response } from "express";
-import { sendHexCommand, SerialPortType } from "../services/serial";
-import { applyAlarmState } from "../services/light-hardware";
+import { raiseAlarm, turnOffAlarmLights } from "../services/alarm-state";
 import { clearNoCodeAlarm } from "../services/no-code-alarm";
 import { logger } from "../utils/logger";
 
@@ -32,7 +31,7 @@ export async function setNormalState(req: Request, res: Response) {
  */
 export async function setAlarmState(req: Request, res: Response) {
   try {
-    await applyAlarmState();
+    await raiseAlarm("defect", "手动报警");
 
     return res.status(200).json({
       success: true,
@@ -55,7 +54,7 @@ export async function setAlarmState(req: Request, res: Response) {
 export async function turnOffAllLights(req: Request, res: Response) {
   try {
     // 关闭全部: A0 00 00 A0
-    await sendHexCommand([0xa0, 0x00, 0x00, 0xa0], SerialPortType.ALARM);
+    await turnOffAlarmLights();
 
     logger.info("已关闭所有指示灯");
 

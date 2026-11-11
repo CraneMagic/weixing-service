@@ -1,165 +1,145 @@
-import { applyAlarmState, applyNormalState } from "./light-hardware";
+import { applyAlarmState, applyNormalState, applyOffState } from "./light-hardware";
+import { triggerRelay4Pulse, getSerialEventEmitter, SerialPortType } from "./serial";
 import { logger } from "../utils/logger";
 
-/**
- * 报警原因集合。
- *
- * 红绿灯是全系统共用的一盏，有两个报警来源：
- *   - defect：表面检测 label=fail（tcp-server 每帧触发）
- *   - noCode：所有在线相机各自连续无喷码达到配置张数
- *
- * 之前两者都直接调 /api/light/alarm 和 /api/light/normal，导致清除任一种报警
- * 都会把另一种的灯一起灭掉。这里用一个原因集合收口：
- *   - raise：每次都执行硬件动作（fail 每帧要触发继电器4脉冲给下游剔除设备，不能去重），
- *            同时把原因记进集合
- *   - clear：移除该原因，只有集合空了才恢复绿灯
- */
-
 export type AlarmReason = "defect" | "noCode";
-
 export const ALARM_REASONS: AlarmReason[] = ["defect", "noCode"];
-
 export const isAlarmReason = (v: unknown): v is AlarmReason =>
   typeof v === "string" && (ALARM_REASONS as string[]).includes(v);
-
 const activeReasons = new Set<AlarmReason>();
-let normalSyncPending = false;
-let normalSyncError: string | null = null;
-let operations: Promise<unknown> = Promise.resolve();
-let recoveryTimer: ReturnType<typeof setInterval> | null = null;
-let recovering = false;
-
-// All alarm sources share the lamp: never interleave a normal sequence with a newer raise.
-function serialize<T>(work: () => Promise<T>): Promise<T> {
-  const result = operations.then(work);
-  operations = result.catch(() => {});
-  return result;
-}
-async function applyNormalTracked(): Promise<void> {
-  normalSyncPending = true;
-  try {
-    await lightControl.applyNormal();
-    normalSyncPending = false;
-    normalSyncError = null;
-  } catch (error) {
-    normalSyncError = error instanceof Error ? error.message : String(error);
-    throw error;
-  }
-}
-
-// 灯控动作，测试时可注入替身
+const reasonVersions = new Map<AlarmReason, number>();
+const reasonRaisedAt = new Map<AlarmReason, number>();
 interface LightControl {
-  applyAlarm: () => Promise<void>;
-  applyNormal: () => Promise<void>;
+  applyAlarm: (current?: () => boolean) => Promise<void>;
+  applyNormal: (current?: () => boolean) => Promise<void>;
+  applyOff?: (current?: () => boolean) => Promise<void>;
+  signalPiece?: () => void | Promise<void>;
 }
-
-let lightControl: LightControl = {
-  applyAlarm: applyAlarmState,
-  applyNormal: applyNormalState,
+const productionControl: LightControl = {
+  applyAlarm: applyAlarmState, applyNormal: applyNormalState, applyOff: applyOffState,
+  signalPiece: async () => { await triggerRelay4Pulse(1000); },
 };
+let lightControl = productionControl;
+// This caches completed command delivery, never physical lamp feedback.
+let delivered: boolean | "off" | null = null;
+let manualOff = false;
+let revision = 0;
+let connectionVersion = 0;
+let syncError: string | null = null;
+let running: Promise<void> | null = null;
+let recoveryTimer: ReturnType<typeof setInterval> | null = null;
+const target = () => activeReasons.size > 0;
+const hardwareTarget = () => manualOff ? "off" as const : target();
 
-/**
- * 触发报警。每次调用都执行硬件动作（红灯+蜂鸣+继电器2+继电器4脉冲），
- * 因为继电器4脉冲是逐件信号，不能因为灯已经红着就跳过。
- */
-export const raiseAlarm = async (
-  reason: AlarmReason,
-  detail?: string
-): Promise<void> => serialize(async () => {
-  activeReasons.add(reason);
-  // A new alarm supersedes a pending green command. Never retry green against it.
-  normalSyncPending = false;
-  normalSyncError = null;
-  await lightControl.applyAlarm();
-  logger.info(
-    `报警已触发: ${reason}${detail ? ` (${detail})` : ""}，当前报警原因: ${[
-      ...activeReasons,
-    ].join(", ")}`
-  );
-});
-
-/**
- * 清除某一个报警原因。只有所有原因都清除后才恢复绿灯。
- * 返回是否已恢复到正常状态。
- */
-export const clearAlarm = (reason: AlarmReason): Promise<boolean> => serialize(async () => {
-  activeReasons.delete(reason);
-
-  if (activeReasons.size > 0) {
-    logger.info(
-      `已清除报警原因 ${reason}，仍有未清除的原因: ${[...activeReasons].join(
-        ", "
-      )}，保持报警状态`
-    );
-    return false;
+function synchronize(): Promise<void> {
+  if (running) {
+    return running.then(() => {
+      if (delivered !== hardwareTarget()) return synchronize();
+    }, error => {
+      // A failed older target must not reject a request for its replacement.
+      if (syncError === null) return synchronize();
+      throw error;
+    });
   }
-
-  await applyNormalTracked();
-  logger.info(`已清除报警原因 ${reason}，无剩余原因，已恢复正常状态`);
-  return true;
-});
-
-/** 清除全部报警原因并恢复绿灯（/api/light/normal 走这条路，保证状态自洽） */
-export const clearAllAlarms = (): Promise<void> => serialize(async () => {
-  activeReasons.clear();
-  await applyNormalTracked();
-  logger.info("已清除全部报警原因，恢复正常状态");
-});
-
-/** Startup uses the same queue and must not overwrite an alarm raised during initialization. */
-export const initializeAlarmLight = (): Promise<void> => serialize(async () => {
-  if (activeReasons.size === 0) await applyNormalTracked();
-});
-
-/** Retry only the failed normal transition; never replay an alarm/eject pulse. */
-export const retryPendingNormal = (): Promise<void> => serialize(async () => {
-  if (!normalSyncPending) return;
-  if (activeReasons.size > 0) {
-    normalSyncPending = false;
-    normalSyncError = null;
-    return;
-  }
-  await applyNormalTracked();
-  logger.info("恢复绿灯指令重试成功");
-});
-
+  // Defer execution until running is installed, including immediately resolving mocks.
+  const work = Promise.resolve().then(async () => {
+    while (delivered !== hardwareTarget()) {
+      const desired = hardwareTarget(), generation = revision, connection = connectionVersion;
+      const current = () => generation === revision && desired === hardwareTarget();
+      delivered = null;
+      try {
+        if (desired === "off") {
+          if (!lightControl.applyOff) throw new Error("未配置关闭指示灯动作");
+          await lightControl.applyOff(current);
+        } else if (desired) await lightControl.applyAlarm(current);
+        else await lightControl.applyNormal(current);
+      } catch (error) {
+        if (!current()) continue; // Only the latest target can fail or be retried.
+        syncError = error instanceof Error ? error.message : String(error);
+        throw error;
+      }
+      if (!current()) continue;
+      if (connection !== connectionVersion) continue;
+      delivered = desired;
+      syncError = null;
+    }
+  });
+  running = work.finally(() => { running = null; });
+  return running;
+}
+function changeReasons(change: () => void): void {
+  const before = hardwareTarget(); manualOff = false; change();
+  if (before !== hardwareTarget()) { revision++; syncError = null; }
+}
+export const raiseAlarm = async (reason: AlarmReason, detail?: string): Promise<void> => {
+  changeReasons(() => {
+    activeReasons.add(reason);
+    reasonVersions.set(reason, (reasonVersions.get(reason) ?? 0) + 1);
+    reasonRaisedAt.set(reason, Date.now());
+  });
+  // Per-piece signal is independent of static lamp delivery and its retries.
+  try { Promise.resolve(lightControl.signalPiece?.()).catch(error => logger.error(`触发继电器4脉冲失败: ${error}`)); }
+  catch (error) { logger.error(`触发继电器4脉冲失败: ${error}`); }
+  await synchronize();
+  if (detail) logger.info(`报警原因 ${reason}: ${detail}`);
+};
+export const clearAlarm = async (reason: AlarmReason): Promise<boolean> => {
+  changeReasons(() => activeReasons.delete(reason));
+  await synchronize();
+  return !target();
+};
+export const getAlarmVersion = (reason: AlarmReason): number => reasonVersions.get(reason) ?? 0;
+export const expireAlarmIfUnchanged = async (reason: AlarmReason, version: number, cutoff: number): Promise<void> => {
+  // Check and remove synchronously: a newer raise cannot slip between these operations.
+  if (!activeReasons.has(reason) || getAlarmVersion(reason) !== version || (reasonRaisedAt.get(reason) ?? Infinity) > cutoff) return;
+  changeReasons(() => activeReasons.delete(reason));
+  await synchronize();
+};
+export const clearAllAlarms = async (): Promise<void> => {
+  changeReasons(() => activeReasons.clear());
+  await synchronize();
+};
+export const turnOffAlarmLights = (): Promise<void> => {
+  if (!manualOff) { manualOff = true; revision++; syncError = null; }
+  return synchronize();
+};
+export const initializeAlarmLight = (): Promise<void> => synchronize();
+// Compatibility name; recovery now handles failed red delivery as well as green.
+export const retryPendingNormal = (): Promise<void> => synchronize();
 export function startAlarmRecoveryMonitor(): void {
   if (recoveryTimer) return;
   recoveryTimer = setInterval(() => {
-    if (!normalSyncPending || recovering) return;
-    recovering = true;
-    retryPendingNormal()
-      .catch(error => logger.error(`恢复绿灯指令失败，将继续重试: ${error}`))
-      .finally(() => { recovering = false; });
+    if (running || delivered === hardwareTarget()) return;
+    synchronize().catch(error => logger.error(`报警灯目标同步失败，将继续重试: ${error}`));
   }, 2000);
 }
+// A reconnect can reset hardware outputs even when the logical target is unchanged.
+function invalidateConnection(type: SerialPortType): void {
+  if (type !== SerialPortType.ALARM && type !== SerialPortType.RELAY) return;
+  connectionVersion++;
+  delivered = null;
+}
+const serialEvents = getSerialEventEmitter();
+serialEvents.on('open', invalidateConnection);
+serialEvents.on('close', invalidateConnection);
+serialEvents.on('error', (_error: Error, type: SerialPortType) => invalidateConnection(type));
+
 export function stopAlarmRecoveryMonitor(): void {
   if (recoveryTimer) clearInterval(recoveryTimer);
   recoveryTimer = null;
 }
-
-export const isReasonActive = (reason: AlarmReason): boolean =>
-  activeReasons.has(reason);
-
+export const isReasonActive = (reason: AlarmReason): boolean => activeReasons.has(reason);
 export const getAlarmState = () => ({
-  alarming: activeReasons.size > 0,
-  reasons: [...activeReasons],
-  // This describes command delivery, not physical feedback from the lamp.
-  normalSyncPending,
-  normalSyncError,
+  alarming: target(), reasons: [...activeReasons],
+  normalSyncPending: !manualOff && !target() && delivered !== false,
+  normalSyncError: !manualOff && !target() ? syncError : null,
+  syncPending: delivered !== hardwareTarget(), syncError,
 });
-
-/** 仅供测试 */
 export const __resetAlarmStateForTest = (): void => {
-  activeReasons.clear();
-  normalSyncPending = false;
-  normalSyncError = null;
+  activeReasons.clear(); reasonVersions.clear(); reasonRaisedAt.clear();
+  manualOff = false; delivered = null; revision = 0; syncError = null;
 };
-
-/** 仅供测试：替换灯控动作，避免真的去操作串口 */
 export const __setLightControlForTest = (control: LightControl | null): void => {
-  lightControl = control ?? {
-    applyAlarm: applyAlarmState,
-    applyNormal: applyNormalState,
-  };
+  lightControl = control ?? productionControl;
+  delivered = null;
 };

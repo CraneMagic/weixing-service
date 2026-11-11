@@ -54,7 +54,7 @@ async function main() {
  assert.deepEqual(saved,{enabled:true,frameThreshold:10});
  await a.clearNoCodeAlarm(); token=a.getStatus().resetToken;
  let attempts=0;
- a.__setDepsForTest({...testDeps, raiseAlarm: async () => { attempts++; active=true; if(attempts===1) throw new Error('serial unavailable'); }});
+ a.__setDepsForTest({...testDeps, raiseAlarm: async () => { attempts++; active=true; throw new Error('serial unavailable'); }, retryAlarm: async () => { attempts++; }});
  await report('a',10); await assert.rejects(report('b',10));
  assert.equal(active,true);
  assert.ok(a.getStatus().lastAlarmAt,'logical alarm keeps timestamp even on hardware failure');

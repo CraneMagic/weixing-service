@@ -45,7 +45,7 @@ async function main() {
   assert.deepEqual(order, ['alarm', 'normal-start']);
   releaseNormal(); await Promise.all([clearing, raising]);
   assert.deepEqual(order, ['alarm', 'normal-start', 'normal-end', 'alarm']); assert.equal(red, true);
-  await alarm.raiseAlarm('defect'); assert.equal(order.filter(x => x==='alarm').length, 3, 'each defect still signals hardware');
+  await alarm.raiseAlarm('defect'); assert.equal(order.filter(x => x==='alarm').length, 2, 'repeated defect does not resend static red state');
 
   const beforeStartup = order.length;
   await alarm.initializeAlarmLight();

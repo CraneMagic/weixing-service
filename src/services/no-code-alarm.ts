@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { isQualityBypassActive } from "../utils/qualityBypass";
 import { getParameter, saveParameter } from "./db";
-import { raiseAlarm, clearAlarm, clearAllAlarms, isReasonActive } from "./alarm-state";
+import { raiseAlarm, clearAlarm, clearAllAlarms, isReasonActive, retryPendingNormal } from "./alarm-state";
 import { logger } from "../utils/logger";
 
 export interface NoCodeConfig { enabled: boolean; frameThreshold: number }
@@ -37,6 +37,7 @@ const defaultDeps = {
   raiseAlarm: (detail: string) => raiseAlarm("noCode", detail),
   clearAlarm: () => clearAlarm("noCode").then(() => {}),
   clearAllAlarms,
+  retryAlarm: retryPendingNormal,
   isNoCodeAlarmActive: () => isReasonActive("noCode"),
   loadConfig: async (): Promise<NoCodeConfig | null> => (await getParameter(PARAM_KEY))?.value ?? null,
   saveConfig: async (next: NoCodeConfig): Promise<void> => { await saveParameter(PARAM_KEY, next); },
@@ -112,7 +113,7 @@ async function evaluateInternal(now: number) {
   }
   if (!config.enabled || bypassed) return;
   if (pendingRaise) {
-    await deps.raiseAlarm([...latest.keys()].sort().join(", "));
+    await deps.retryAlarm();
     pendingRaise = false;
     return;
   }

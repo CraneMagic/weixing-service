@@ -28,7 +28,7 @@ await alarmState.raiseAlarm("defect");
 await alarmState.raiseAlarm("defect");
 await alarmState.raiseAlarm("defect");
 await flush();
-check("重复 raise 每次都执行硬件动作", lightActions.length, 3);
+check("重复 raise 不重复发送红灯状态", lightActions.length, 1);
 
 // 14. 两种报警并存时，清除其一不能灭灯
 setupAlarmState();

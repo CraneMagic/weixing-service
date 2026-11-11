@@ -649,7 +649,7 @@ export async function batchSaveQualityRecords(
 
         // 4. Insert record into database
         const columns = Object.keys(data).filter(
-          (k) => (data as any)[k] !== undefined
+          (k) => k !== "alarm_received_at" && (data as any)[k] !== undefined
         );
         const values = columns.map((k) => (data as any)[k]);
         const placeholders = columns.map((_, i) => `$${i + 1}`).join(", ");
@@ -756,7 +756,7 @@ export async function saveQualityRecord(
   }
 
   const columns = Object.keys(data).filter(
-    (k) => (data as any)[k] !== undefined
+    (k) => k !== "alarm_received_at" && (data as any)[k] !== undefined
   );
   const values = columns.map((k) => (data as any)[k]);
   const placeholders = columns.map((_, i) => `$${i + 1}`).join(", ");
@@ -1889,6 +1889,7 @@ export async function getQualityRecordsStatistics(options: {
   invalidCount: number;
   statusCounts: {
     INREVIEW: number;
+    EXPIRED: number;
     RESOLVED: number;
     IGNORED: number;
     MARKED: number;
@@ -1947,6 +1948,7 @@ export async function getQualityRecordsStatistics(options: {
       
       -- 审核状态统计
       COUNT(*) FILTER (WHERE status = 'INREVIEW')::int AS inreview_count,
+      COUNT(*) FILTER (WHERE status = 'EXPIRED')::int AS expired_count,
       COUNT(*) FILTER (WHERE status = 'RESOLVED')::int AS resolved_count,
       COUNT(*) FILTER (WHERE status = 'IGNORED')::int AS ignored_count,
       COUNT(*) FILTER (WHERE status = 'MARKED')::int AS marked_count,
@@ -2017,6 +2019,7 @@ export async function getQualityRecordsStatistics(options: {
       invalidCount: stats.invalid_count,
       statusCounts: {
         INREVIEW: stats.inreview_count,
+        EXPIRED: stats.expired_count,
         RESOLVED: stats.resolved_count,
         IGNORED: stats.ignored_count,
         MARKED: stats.marked_count,

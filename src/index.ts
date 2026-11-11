@@ -1,3 +1,4 @@
+import { startAlarmExpiryMonitor } from './services/alarm-expiry';
 import express from "express";
 import cors from "cors";
 import morgan from "morgan";
@@ -163,6 +164,7 @@ async function startApplication() {
       // 无喷码报警周期评估（依赖质量跳过状态，故只在数据库可用时启动）
       startNoCodeAlarmMonitor();
       startAlarmRecoveryMonitor();
+      startAlarmExpiryMonitor();
     }
 
     // 健康检查路由
